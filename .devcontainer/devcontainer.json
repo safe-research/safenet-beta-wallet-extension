@@ -1,0 +1,21 @@
+{
+  "name": "safenet-beta-wallet-extension",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+  "features": {},
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "ms-vscode.vscode-typescript-next"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "files.eol": "\n",
+        "typescript.tsdk": "node_modules/typescript/lib"
+      }
+    }
+  },
+  "postCreateCommand": "npm config set include dev && npm install",
+  "remoteUser": "node"
+}
