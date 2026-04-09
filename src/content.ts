@@ -20,14 +20,29 @@ function getCurrentSafeTxHashFromUrl(): `0x${string}` | null {
     : null;
 }
 
+const CHAIN_PREFIX_MAP: Record<string, bigint> = {
+  eth: 1n,
+  matic: 137n,
+  oeth: 10n,
+  arb1: 42161n,
+  sep: 11155111n,
+  base: 8453n,
+  gno: 100n,
+  bnb: 56n,
+  avax: 43114n,
+  celo: 42220n,
+  zkevm: 1101n,
+  zksync: 324n,
+  scroll: 534352n,
+  aurora: 1313161554n,
+};
+
 function getChainIdFromUrl(): bigint {
   const url = new URL(window.location.href);
   const safeParam = url.searchParams.get("safe");
   if (!safeParam) return 11155111n;
   const prefix = safeParam.split(":")[0];
-  if (prefix === "sep") return 11155111n;
-  if (prefix === "eth") return 1n;
-  return 11155111n;
+  return CHAIN_PREFIX_MAP[prefix] ?? 11155111n;
 }
 
 function readDraftTransactionFromDom(): SafeTransactionPayload | null {
