@@ -1,13 +1,11 @@
 import {
   createPublicClient,
   decodeEventLog,
-  encodeFunctionData,
   getAddress,
   hashTypedData,
   http,
   isAddress,
   pad,
-  parseAbi,
   parseAbiItem,
   type Hex,
 } from 'viem'
@@ -20,10 +18,6 @@ type LookupProposalDeps = {
   normalizeAddress?: typeof getAddress
   padAddress?: typeof pad
 }
-
-export const consensusAbi = parseAbi([
-  'function proposeTransaction((uint256 chainId, address safe, address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, uint256 nonce) transaction) external returns (bytes32 safeTxHash)',
-])
 
 const transactionProposedEvent = parseAbiItem(
   'event TransactionProposed(bytes32 indexed safeTxHash, uint256 indexed chainId, address indexed safe, uint64 epoch, (uint256 chainId, address safe, address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, uint256 nonce) transaction)',
@@ -172,30 +166,26 @@ export async function loadSafeTransactionFromService(chainId: bigint, safeTxHash
   } satisfies SafeTransactionPayload
 }
 
-export function encodeProposalTransactionData(
-  settings: ExtensionSettings,
-  payload: SafeTransactionPayload,
-): Hex {
+export async function submitProposal(settings: ExtensionSettings, payload: SafeTransactionPayload) {
   if (!isAddress(settings.consensus)) throw new Error('Invalid consensus address')
-
-  return encodeFunctionData({
-    abi: consensusAbi,
-    functionName: 'proposeTransaction',
-    args: [
-      {
-        chainId: payload.chainId,
-        safe: payload.safe,
-        to: payload.to,
-        value: payload.value,
-        data: payload.data,
-        operation: payload.operation,
-        safeTxGas: payload.safeTxGas,
-        baseGas: payload.baseGas,
-        gasPrice: payload.gasPrice,
-        gasToken: payload.gasToken,
-        refundReceiver: payload.refundReceiver,
-        nonce: payload.nonce,
-      },
-    ],
+  const response = await fetch(settings.relayerUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chainId: payload.chainId.toString(),
+      safe: payload.safe,
+      to: payload.to,
+      value: payload.value.toString(),
+      data: payload.data,
+      operation: payload.operation,
+      safeTxGas: payload.safeTxGas.toString(),
+      baseGas: payload.baseGas.toString(),
+      gasPrice: payload.gasPrice.toString(),
+      gasToken: payload.gasToken,
+      refundReceiver: payload.refundReceiver,
+      nonce: payload.nonce.toString(),
+    }),
   })
+
+  if (!response.ok) throw new Error('Proposal submission failed')
 }

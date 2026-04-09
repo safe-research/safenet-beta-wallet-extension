@@ -2,7 +2,6 @@
 console.log("[Safenet Beta] content script loaded");
 
 import browser from "webextension-polyfill";
-import { getAddress } from "viem";
 import { UI_IDS } from "./constants";
 import {
   ensureUi,
@@ -15,11 +14,11 @@ import {
 } from "./content-helpers";
 import {
   computeSafeTxHash,
-  encodeProposalTransactionData,
   explorerUrl,
   isModuleTransaction,
   loadSafeTransactionFromService,
   lookupProposal,
+  submitProposal,
 } from "./safenet";
 import { getSettings } from "./storage";
 import type {
@@ -36,10 +35,7 @@ const PAGE_BRIDGE_SOURCE = "safenet-beta-page-bridge";
 const CONTENT_SOURCE = "safenet-beta-content";
 const PAGE_BRIDGE_REQUEST = "request-draft-tx";
 const PAGE_BRIDGE_RESPONSE = "draft-tx-response";
-const PAGE_BRIDGE_SUBMIT_REQUEST = "submit-proposal";
-const PAGE_BRIDGE_SUBMIT_RESPONSE = "submit-proposal-response";
 const PAGE_BRIDGE_SCRIPT_ID = "safenet-beta-page-bridge-script";
-const CONSENSUS_CHAIN_ID = 100;
 
 const pendingDraftRequests = new Map<
   number,
@@ -48,14 +44,6 @@ const pendingDraftRequests = new Map<
     timer: number;
   }
 >();
-const pendingSubmitRequests = new Map<
-  number,
-  {
-    resolve: (result: { txHash?: `0x${string}`; error?: string }) => void;
-    timer: number;
-  }
->();
-
 let lastAutoRunKey: string | null = null;
 let requestIdCounter = 0;
 let pageBridgeReady = false;
@@ -87,15 +75,6 @@ window.addEventListener("message", (event: MessageEvent) => {
     return;
   }
 
-  if (data.type === PAGE_BRIDGE_SUBMIT_RESPONSE) {
-    const pending = pendingSubmitRequests.get(requestId);
-    if (!pending) return;
-
-    window.clearTimeout(pending.timer);
-    pendingSubmitRequests.delete(requestId);
-    const payload = data.payload as { txHash?: `0x${string}`; error?: string } | undefined;
-    pending.resolve({ txHash: payload?.txHash, error: payload?.error });
-  }
 });
 
 function ensurePageBridgeInjected(): Promise<void> {
@@ -147,60 +126,6 @@ async function requestDraftTransactionFromPage(timeoutMs = 500): Promise<SafeTra
         source: CONTENT_SOURCE,
         type: PAGE_BRIDGE_REQUEST,
         requestId,
-      },
-      window.location.origin,
-    );
-  });
-}
-
-async function submitProposalOnchain(
-  settings: ExtensionSettings,
-  payload: SafeTransactionPayload,
-  safeTxHash: `0x${string}`,
-): Promise<{ txHash?: `0x${string}`; explorer: string }> {
-  await ensurePageBridgeInjected();
-  if (!pageBridgeReady) throw new Error("Page bridge unavailable");
-
-  const explorer = explorerUrl(payload.chainId, safeTxHash);
-  const calldata = encodeProposalTransactionData(settings, payload);
-  const requestId = ++requestIdCounter;
-
-  log("Submitting proposal via consensus contract", {
-    consensus: settings.consensus,
-    consensusChainId: CONSENSUS_CHAIN_ID,
-    safeTxHash,
-    explorer,
-    payload,
-    calldata,
-  });
-
-  return new Promise((resolve, reject) => {
-    const timer = window.setTimeout(() => {
-      pendingSubmitRequests.delete(requestId);
-      reject(new Error("Timed out waiting for wallet submission"));
-    }, 120000);
-
-    pendingSubmitRequests.set(requestId, {
-      timer,
-      resolve: (result) => {
-        if (result.error) {
-          reject(new Error(result.error));
-          return;
-        }
-        resolve({ txHash: result.txHash, explorer });
-      },
-    });
-
-    window.postMessage(
-      {
-        source: CONTENT_SOURCE,
-        type: PAGE_BRIDGE_SUBMIT_REQUEST,
-        requestId,
-        payload: {
-          chainIdHex: `0x${CONSENSUS_CHAIN_ID.toString(16)}`,
-          to: getAddress(settings.consensus),
-          data: calldata,
-        },
       },
       window.location.origin,
     );
@@ -398,12 +323,13 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
       return;
     }
 
-    // No proposal found, submit onchain via the consensus contract, then poll.
+    // No proposal found, submit exactly like the explorer does, via relayer POST.
     log("Safe tx data used for submit:", payload);
     log("Safe tx hash used for submit:", safeTxHash);
-    const submission = await submitProposalOnchain(settings, payload, safeTxHash);
-    log("Proposal submitted onchain:", submission);
-    setStatus("loading", "Submitted, waiting for attestation...", submission.explorer);
+    log("Submitting proposal via relayer:", settings.relayerUrl);
+    await submitProposal(settings, payload);
+    log("Proposal submitted via relayer");
+    setStatus("loading", "Submitted, waiting for attestation...", explorer);
     const afterSubmit = await pollForAttestation(
       settings,
       safeTxHash,

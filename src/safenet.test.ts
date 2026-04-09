@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { computeSafeTxHash, encodeProposalTransactionData, explorerUrl, isModuleTransaction, loadSafeTransactionFromService, lookupProposal } from './safenet'
+import { computeSafeTxHash, explorerUrl, isModuleTransaction, loadSafeTransactionFromService, lookupProposal, submitProposal } from './safenet'
 import { CONSENSUS_DEPLOYMENT_BLOCK, DEFAULT_SETTINGS } from './constants'
 import { settingsSchema } from './schema'
 
@@ -51,7 +51,7 @@ describe('computeSafeTxHash', () => {
   })
 })
 
-describe('encodeProposalTransactionData', () => {
+describe('submitProposal', () => {
   const payload = {
     chainId: 1n,
     safe: '0x1111111111111111111111111111111111111111' as `0x${string}`,
@@ -67,10 +67,19 @@ describe('encodeProposalTransactionData', () => {
     nonce: 7n,
   }
 
-  it('encodes proposeTransaction calldata', () => {
-    const data = encodeProposalTransactionData(DEFAULT_SETTINGS, payload)
-    expect(data.startsWith('0x')).toBe(true)
-    expect(data.length).toBeGreaterThan(10)
+  it('posts the transaction payload to the relayer', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await submitProposal(DEFAULT_SETTINGS, payload)
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      DEFAULT_SETTINGS.relayerUrl,
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
   })
 
   it('builds explorer links for a safe tx hash', () => {
