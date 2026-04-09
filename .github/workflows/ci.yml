@@ -31,7 +31,7 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          GIT_SHA: ${{ github.sha }}
+          GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Upload extension artifact
         id: upload
@@ -46,7 +46,7 @@ jobs:
         with:
           script: |
             const marker = '<!-- safenet-beta-extension-build -->'
-            const sha = context.sha.slice(0, 7)
+            const sha = (context.payload.pull_request?.head?.sha ?? context.sha).slice(0, 7)
             const artifactUrl = '${{ steps.upload.outputs.artifact-url }}'
             const body = `${marker}
             ### Extension build ready (\`${sha}\`)
