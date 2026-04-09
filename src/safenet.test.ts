@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { computeSafeTxHash, isModuleTransaction, loadSafeTransactionFromService } from './safenet'
-import { DEFAULT_SETTINGS } from './constants'
+import { computeSafeTxHash, isModuleTransaction, loadSafeTransactionFromService, lookupProposal } from './safenet'
+import { CONSENSUS_DEPLOYMENT_BLOCK, DEFAULT_SETTINGS } from './constants'
 import { settingsSchema } from './schema'
 
 describe('settings schema', () => {
@@ -145,5 +145,93 @@ describe('loadSafeTransactionFromService', () => {
     expect(result!.operation).toBe(1)
     expect(result!.data).toBe('0xabcd')
     expect(result!.nonce).toBe(3n)
+  })
+})
+
+
+describe('lookupProposal', () => {
+  const makeClient = (logs: Array<{ data: `0x${string}`; topics: [`0x${string}`, ...`0x${string}`[]] }>) =>
+    ({ request: vi.fn().mockResolvedValue(logs) })
+
+  it('returns no proposal when no logs are found', async () => {
+    const result = await lookupProposal(
+      DEFAULT_SETTINGS,
+      ('0x' + 'a'.repeat(64)) as `0x${string}`,
+      100n,
+      '0x1111111111111111111111111111111111111111',
+      {
+        createClient: () => makeClient([]) as never,
+      },
+    )
+
+    expect(result).toEqual({ exists: false, attested: false, explorerUrl: undefined })
+  })
+
+  it('uses the consensus deployment block in eth_getLogs', async () => {
+    const request = vi.fn().mockResolvedValue([])
+
+    await lookupProposal(
+      DEFAULT_SETTINGS,
+      ('0x' + 'b'.repeat(64)) as `0x${string}`,
+      100n,
+      '0x1111111111111111111111111111111111111111',
+      {
+        createClient: () => ({ request }) as never,
+      },
+    )
+
+    expect(request).toHaveBeenCalledWith({
+      method: 'eth_getLogs',
+      params: [
+        expect.objectContaining({
+          fromBlock: CONSENSUS_DEPLOYMENT_BLOCK,
+          toBlock: 'latest',
+        }),
+      ],
+    })
+  })
+
+  it('returns proposed=true attested=false when only a proposal log decodes', async () => {
+    const decodeLog = vi
+      .fn()
+      .mockReturnValueOnce({ eventName: 'TransactionProposed' })
+
+    const result = await lookupProposal(
+      DEFAULT_SETTINGS,
+      ('0x' + 'c'.repeat(64)) as `0x${string}`,
+      100n,
+      '0x1111111111111111111111111111111111111111',
+      {
+        createClient: () => makeClient([{ data: '0x1234', topics: ['0xaaa'] as [`0x${string}`, ...`0x${string}`[]] }]) as never,
+        decodeLog: decodeLog as never,
+      },
+    )
+
+    expect(result.exists).toBe(true)
+    expect(result.attested).toBe(false)
+    expect(result.explorerUrl).toContain('safeTxHash=0x' + 'c'.repeat(64))
+  })
+
+  it('returns attested=true when an attestation log decodes after proposal decode fails', async () => {
+    const decodeLog = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error('not proposed')
+      })
+      .mockReturnValueOnce({ eventName: 'TransactionAttested' })
+
+    const result = await lookupProposal(
+      DEFAULT_SETTINGS,
+      ('0x' + 'd'.repeat(64)) as `0x${string}`,
+      100n,
+      '0x1111111111111111111111111111111111111111',
+      {
+        createClient: () => makeClient([{ data: '0x1234', topics: ['0xbbb'] as [`0x${string}`, ...`0x${string}`[]] }]) as never,
+        decodeLog: decodeLog as never,
+      },
+    )
+
+    expect(result.exists).toBe(true)
+    expect(result.attested).toBe(true)
   })
 })

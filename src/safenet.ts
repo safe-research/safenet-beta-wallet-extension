@@ -9,8 +9,15 @@ import {
   parseAbiItem,
   type Hex,
 } from 'viem'
-import type { ExtensionSettings, ProposalLookupResult, SafeTransactionPayload } from './types'
 import { CONSENSUS_DEPLOYMENT_BLOCK } from './constants'
+import type { ExtensionSettings, ProposalLookupResult, SafeTransactionPayload } from './types'
+
+type LookupProposalDeps = {
+  createClient?: typeof createPublicClient
+  decodeLog?: typeof decodeEventLog
+  normalizeAddress?: typeof getAddress
+  padAddress?: typeof pad
+}
 
 const transactionProposedEvent = parseAbiItem(
   'event TransactionProposed(bytes32 indexed safeTxHash, uint256 indexed chainId, address indexed safe, uint64 epoch, (uint256 chainId, address safe, address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, uint256 nonce) transaction)',
@@ -72,15 +79,21 @@ export async function lookupProposal(
   safeTxHash: `0x${string}`,
   chainId: bigint,
   safe?: `0x${string}`,
+  deps: LookupProposalDeps = {},
 ): Promise<ProposalLookupResult> {
-  const client = createPublicClient({ transport: http(settings.rpc) })
-  const topics = [null, safeTxHash, null, safe ? pad(safe) : null] as (Hex | null)[]
+  const createClient = deps.createClient ?? createPublicClient
+  const decodeLog = deps.decodeLog ?? decodeEventLog
+  const normalizeAddress = deps.normalizeAddress ?? getAddress
+  const padAddress = deps.padAddress ?? pad
+
+  const client = createClient({ transport: http(settings.rpc) })
+  const topics = [null, safeTxHash, null, safe ? padAddress(safe) : null] as (Hex | null)[]
 
   const rawLogs = await client.request({
     method: 'eth_getLogs',
     params: [
       {
-        address: getAddress(settings.consensus),
+        address: normalizeAddress(settings.consensus),
         fromBlock: CONSENSUS_DEPLOYMENT_BLOCK,
         toBlock: 'latest',
         topics,
@@ -93,7 +106,7 @@ export async function lookupProposal(
 
   for (const log of rawLogs as Array<{ data: Hex; topics: [Hex, ...Hex[]] }>) {
     try {
-      const proposedDecoded = decodeEventLog({
+      const proposedDecoded = decodeLog({
         abi: [transactionProposedEvent],
         data: log.data,
         topics: log.topics,
@@ -105,7 +118,7 @@ export async function lookupProposal(
     }
 
     try {
-      const attestedDecoded = decodeEventLog({
+      const attestedDecoded = decodeLog({
         abi: [transactionAttestedEvent],
         data: log.data,
         topics: log.topics,
