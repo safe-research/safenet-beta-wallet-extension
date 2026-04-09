@@ -1,12 +1,14 @@
 // This log fires at module load time - if you see it, the content script is running.
 console.log("[Safenet Beta] content script loaded");
 
+import browser from "webextension-polyfill";
 import { UI_IDS } from "./constants";
 import {
   ensureUi,
   getChainIdFromUrl,
   getCurrentSafeTxHashFromUrl,
   getDraftTransactionFromPage,
+  normalizeDraftTransactionData,
 } from "./content-helpers";
 import {
   computeSafeTxHash,
@@ -26,7 +28,102 @@ import type {
 const log = (...args: unknown[]) => console.log("[Safenet Beta]", ...args);
 const logErr = (...args: unknown[]) => console.error("[Safenet Beta]", ...args);
 
+const PAGE_BRIDGE_SOURCE = "safenet-beta-page-bridge";
+const CONTENT_SOURCE = "safenet-beta-content";
+const PAGE_BRIDGE_REQUEST = "request-draft-tx";
+const PAGE_BRIDGE_RESPONSE = "draft-tx-response";
+const PAGE_BRIDGE_SCRIPT_ID = "safenet-beta-page-bridge-script";
+
+const pendingDraftRequests = new Map<
+  number,
+  {
+    resolve: (payload: SafeTransactionPayload | null) => void;
+    timer: number;
+  }
+>();
+
 let lastAutoRunKey: string | null = null;
+let draftRequestId = 0;
+let pageBridgeReady = false;
+let pageBridgePromise: Promise<void> | null = null;
+
+window.addEventListener("message", (event: MessageEvent) => {
+  if (event.source !== window) return;
+  const data = event.data as {
+    source?: string;
+    type?: string;
+    requestId?: number;
+    payload?: unknown;
+  };
+  if (data.source !== PAGE_BRIDGE_SOURCE || data.type !== PAGE_BRIDGE_RESPONSE) {
+    return;
+  }
+
+  const requestId = data.requestId;
+  if (typeof requestId !== "number") return;
+
+  const pending = pendingDraftRequests.get(requestId);
+  if (!pending) return;
+
+  window.clearTimeout(pending.timer);
+  pendingDraftRequests.delete(requestId);
+  pending.resolve(normalizeDraftTransactionData(data.payload, window.location.href));
+});
+
+function ensurePageBridgeInjected(): Promise<void> {
+  if (pageBridgeReady) return Promise.resolve();
+  if (pageBridgePromise) return pageBridgePromise;
+
+  pageBridgePromise = new Promise((resolve) => {
+    const existing = document.getElementById(PAGE_BRIDGE_SCRIPT_ID) as HTMLScriptElement | null;
+    if (existing) {
+      pageBridgeReady = true;
+      resolve();
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.id = PAGE_BRIDGE_SCRIPT_ID;
+    script.src = browser.runtime.getURL("page-bridge.js");
+    script.async = false;
+    script.onload = () => {
+      pageBridgeReady = true;
+      script.remove();
+      resolve();
+    };
+    script.onerror = () => {
+      logErr("Failed to inject page bridge");
+      script.remove();
+      resolve();
+    };
+    (document.head ?? document.documentElement).appendChild(script);
+  });
+
+  return pageBridgePromise;
+}
+
+async function requestDraftTransactionFromPage(timeoutMs = 500): Promise<SafeTransactionPayload | null> {
+  await ensurePageBridgeInjected();
+  if (!pageBridgeReady) return null;
+
+  return new Promise((resolve) => {
+    const requestId = ++draftRequestId;
+    const timer = window.setTimeout(() => {
+      pendingDraftRequests.delete(requestId);
+      resolve(null);
+    }, timeoutMs);
+
+    pendingDraftRequests.set(requestId, { resolve, timer });
+    window.postMessage(
+      {
+        source: CONTENT_SOURCE,
+        type: PAGE_BRIDGE_REQUEST,
+        requestId,
+      },
+      window.location.origin,
+    );
+  });
+}
 
 async function resolveTransaction(): Promise<{
   payload: SafeTransactionPayload;
@@ -46,7 +143,9 @@ async function resolveTransaction(): Promise<{
     log("Safe service returned null for hash:", urlHash);
   }
 
-  const draftPayload = getDraftTransactionFromPage(document, href);
+  const draftPayload =
+    getDraftTransactionFromPage(document, href) ??
+    (await requestDraftTransactionFromPage());
   if (draftPayload) {
     const safeTxHash = computeSafeTxHash(draftPayload);
     log("Draft tx recovered from Safe Wallet page:", { safeTxHash, payload: draftPayload });
@@ -236,6 +335,7 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
 
 async function init() {
   log("Initialising on", window.location.href);
+  void ensurePageBridgeInjected();
   ensurePageUi();
   const button = document.getElementById(UI_IDS.button) as HTMLButtonElement | null;
   // Use onclick assignment instead of addEventListener to avoid accumulating

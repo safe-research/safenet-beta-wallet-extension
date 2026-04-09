@@ -30,7 +30,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["dist/assets/*"],
+      "resources": ["dist/assets/*", "page-bridge.js"],
       "matches": ["<all_urls>"]
     }
   ],

@@ -49,7 +49,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
-function looksLikeSafeTxData(value: unknown): value is Record<string, unknown> {
+export function looksLikeSafeTxData(value: unknown): value is Record<string, unknown> {
   return isRecord(value) && SAFE_TX_KEYS.every((key) => key in value)
 }
 
@@ -145,42 +145,49 @@ export function getChainIdFromUrl(urlString: string): bigint {
   return CHAIN_PREFIX_MAP[prefix] ?? 11155111n
 }
 
+export function normalizeDraftTransactionData(
+  raw: unknown,
+  urlString: string,
+): SafeTransactionPayload | null {
+  if (!looksLikeSafeTxData(raw)) return null
+
+  const safe = getSafeAddressFromUrl(urlString)
+  if (!safe) return null
+
+  const to = getSafeAddressFromValue(raw.to)
+  if (!to) return null
+
+  return {
+    chainId: getChainIdFromUrl(urlString),
+    safe,
+    to,
+    value: toBigIntValue(raw.value),
+    data: toDataHex(raw.data),
+    operation: Number(toBigIntValue(raw.operation)) as 0 | 1,
+    safeTxGas: toBigIntValue(raw.safeTxGas),
+    baseGas: toBigIntValue(raw.baseGas),
+    gasPrice: toBigIntValue(raw.gasPrice),
+    gasToken: getSafeAddressFromValue(raw.gasToken) ?? ZERO_ADDRESS,
+    refundReceiver: getSafeAddressFromValue(raw.refundReceiver) ?? ZERO_ADDRESS,
+    nonce: toBigIntValue(raw.nonce),
+  }
+}
+
 export function getDraftTransactionFromPage(
   documentRef: Document,
   urlString: string,
 ): SafeTransactionPayload | null {
-  const safe = getSafeAddressFromUrl(urlString)
-  if (!safe) return null
-
   const candidates = documentRef.querySelectorAll(UI_ANCHOR_SELECTORS.join(', '))
   for (const element of candidates) {
     let fiber = getReactFiberNode(element)
     let hops = 0
     while (fiber && hops < 40) {
-      const raw = findSafeTxData(fiber.memoizedProps) ?? findSafeTxData(fiber.pendingProps) ?? findSafeTxData(fiber.memoizedState)
-      if (raw) {
-        const to = getSafeAddressFromValue(raw.to)
-        if (!to) {
-          fiber = fiber.return ?? null
-          hops += 1
-          continue
-        }
-
-        return {
-          chainId: getChainIdFromUrl(urlString),
-          safe,
-          to,
-          value: toBigIntValue(raw.value),
-          data: toDataHex(raw.data),
-          operation: Number(toBigIntValue(raw.operation)) as 0 | 1,
-          safeTxGas: toBigIntValue(raw.safeTxGas),
-          baseGas: toBigIntValue(raw.baseGas),
-          gasPrice: toBigIntValue(raw.gasPrice),
-          gasToken: getSafeAddressFromValue(raw.gasToken) ?? ZERO_ADDRESS,
-          refundReceiver: getSafeAddressFromValue(raw.refundReceiver) ?? ZERO_ADDRESS,
-          nonce: toBigIntValue(raw.nonce),
-        }
-      }
+      const raw =
+        findSafeTxData(fiber.memoizedProps) ??
+        findSafeTxData(fiber.pendingProps) ??
+        findSafeTxData(fiber.memoizedState)
+      const normalized = normalizeDraftTransactionData(raw, urlString)
+      if (normalized) return normalized
 
       fiber = fiber.return ?? null
       hops += 1
