@@ -2,6 +2,12 @@
 
 Browser extension that adds a Safenet Beta check to Safe Wallet transaction flows.
 
+## Download
+
+The latest build from `main` is always available as a GitHub Release:
+
+**[Download safenet-beta-extension.zip](https://github.com/safe-research/safenet-beta-wallet-extension/releases/latest/download/safenet-beta-extension.zip)**
+
 ## Current scope
 
 - Manual Safenet Beta check from Safe Wallet pages
