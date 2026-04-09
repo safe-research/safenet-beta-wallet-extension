@@ -1,16 +1,16 @@
 import type { ExtensionSettings } from './types'
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
-  consensus: '0x49Db717Adec0D22235A73C3a9c2ea57AB0bC2353',
+  consensus: '0x223624cBF099e5a8f8cD5aF22aFa424a1d1acEE9',
   rpc: 'https://rpc.safenet-beta.eth.limo',
   relayerUrl: 'https://explorer.safenet-beta.eth.limo/api/proposals',
   autoRun: false,
 }
 
-// Deployment block of the consensus contract on the Safenet Beta chain.
+// Deployment block of the consensus contract on Gnosis Chain (block 45210396).
 // Used as fromBlock in eth_getLogs to avoid scanning from genesis.
-// Update this to the actual deployment block to improve lookup performance.
-export const CONSENSUS_DEPLOYMENT_BLOCK = '0x0'
+// https://gnosisscan.io/address/0x223624cBF099e5a8f8cD5aF22aFa424a1d1acEE9
+export const CONSENSUS_DEPLOYMENT_BLOCK = '0x2B1DB1C'
 
 export const SAFE_APP_MATCH = /^https:\/\/(app\.)?safe\.global\//
 
