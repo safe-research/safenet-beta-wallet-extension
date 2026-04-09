@@ -13,15 +13,22 @@ import type {
   SafeTransactionPayload,
 } from "./types";
 
+const log = (...args: unknown[]) => console.log("[Safenet Beta]", ...args);
+const logErr = (...args: unknown[]) => console.error("[Safenet Beta]", ...args);
+
 let lastAutoRunKey: string | null = null;
 
 function getCurrentSafeTxHashFromUrl(): `0x${string}` | null {
   const url = new URL(window.location.href);
   const id = url.searchParams.get("id");
-  if (!id) return null;
+  if (!id) {
+    log("No ?id param in URL:", window.location.href);
+    return null;
+  }
 
   // Direct 32-byte hash: ?id=0x<64 hex chars>
   if (id.startsWith("0x") && id.length === 66) {
+    log("Found safeTxHash in URL (direct):", id);
     return id as `0x${string}`;
   }
 
@@ -29,9 +36,11 @@ function getCurrentSafeTxHashFromUrl(): `0x${string}` | null {
   // e.g. multisig_0xSAFE_0xSAFETXHASH
   const lastPart = id.split("_").at(-1);
   if (lastPart?.startsWith("0x") && lastPart.length === 66) {
+    log("Found safeTxHash in URL (multisig format):", lastPart);
     return lastPart as `0x${string}`;
   }
 
+  log("?id param present but not a recognisable safeTxHash:", id);
   return null;
 }
 
@@ -55,9 +64,14 @@ const CHAIN_PREFIX_MAP: Record<string, bigint> = {
 function getChainIdFromUrl(): bigint {
   const url = new URL(window.location.href);
   const safeParam = url.searchParams.get("safe");
-  if (!safeParam) return 11155111n;
+  if (!safeParam) {
+    log("No ?safe param in URL, defaulting to Sepolia (11155111)");
+    return 11155111n;
+  }
   const prefix = safeParam.split(":")[0];
-  return CHAIN_PREFIX_MAP[prefix] ?? 11155111n;
+  const chainId = CHAIN_PREFIX_MAP[prefix] ?? 11155111n;
+  log(`Chain: ${prefix} → chainId ${chainId}`);
+  return chainId;
 }
 
 async function resolveTransaction(): Promise<{
@@ -68,8 +82,13 @@ async function resolveTransaction(): Promise<{
   const chainId = getChainIdFromUrl();
 
   if (urlHash) {
+    log("Loading tx from Safe service:", urlHash);
     const payload = await loadSafeTransactionFromService(chainId, urlHash);
-    if (payload) return { payload, safeTxHash: urlHash };
+    if (payload) {
+      log("Tx loaded:", payload);
+      return { payload, safeTxHash: urlHash };
+    }
+    log("Safe service returned null for hash:", urlHash);
   }
 
   // Draft transactions (no URL hash) cannot be reliably resolved without
@@ -91,6 +110,7 @@ async function waitForTransaction(
     }
     await new Promise<void>((r) => setTimeout(r, interval));
   }
+  log("waitForTransaction timed out after", maxWait, "ms");
   return null;
 }
 
@@ -139,6 +159,7 @@ function ensureUi() {
 }
 
 function setStatus(status: ProposalStatus, message: string, link?: string) {
+  log(`Status: ${status} — ${message}${link ? ` (${link})` : ""}`);
   const statusEl = document.getElementById(UI_IDS.status);
   const button = document.getElementById(
     UI_IDS.button,
@@ -183,16 +204,22 @@ async function pollForAttestation(
   let last: ProposalLookupResult = { exists: false, attested: false };
   while (Date.now() < deadline) {
     await new Promise<void>((r) => setTimeout(r, interval));
+    log("Polling for attestation...");
     last = await lookupProposal(settings, safeTxHash, chainId, safe);
+    log("Lookup result:", last);
     if (last.attested) return last;
   }
+  log("Attestation poll timed out");
   return last;
 }
 
 async function runCheck(mode: "manual" | "auto" = "manual") {
+  log(`Running check (mode: ${mode})`);
   const settings = await getSettings();
+  log("Settings:", settings);
   const resolved = await resolveTransaction();
   if (!resolved) {
+    log("Could not resolve transaction");
     if (mode === "manual") {
       setStatus("failed", "No transaction found on this page");
     }
@@ -200,24 +227,32 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
   }
 
   const { payload, safeTxHash } = resolved;
+  log("Resolved tx:", { safeTxHash, payload });
+
   if (isModuleTransaction(payload)) {
     setStatus("unsupported", "Module transactions are not supported");
     return;
   }
 
   const dedupeKey = `${payload.chainId}:${safeTxHash}`;
-  if (mode === "auto" && lastAutoRunKey === dedupeKey) return;
+  if (mode === "auto" && lastAutoRunKey === dedupeKey) {
+    log("Skipping duplicate auto-run for", dedupeKey);
+    return;
+  }
   if (mode === "auto") lastAutoRunKey = dedupeKey;
 
   setStatus("loading", "Checking Safenet Beta...");
 
   try {
+    log("Looking up existing proposal for", safeTxHash);
     const existing = await lookupProposal(
       settings,
       safeTxHash,
       payload.chainId,
       payload.safe,
     );
+    log("Existing proposal:", existing);
+
     if (existing.attested) {
       setStatus("passed", "Passed", existing.explorerUrl);
       return;
@@ -240,7 +275,9 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
     }
 
     // No proposal found - submit, then poll
+    log("Submitting proposal to relayer:", settings.relayerUrl);
     await submitProposal(settings, payload);
+    log("Proposal submitted, polling for attestation");
     setStatus("loading", "Submitted, waiting for attestation...");
     const afterSubmit = await pollForAttestation(
       settings,
@@ -254,12 +291,13 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
       afterSubmit.explorerUrl,
     );
   } catch (err) {
-    console.error("[Safenet Beta] Check failed:", err);
+    logErr("Check failed:", err);
     setStatus("failed", "Check error - see console");
   }
 }
 
 async function init() {
+  log("Initialising on", window.location.href);
   ensureUi();
   const button = document.getElementById(UI_IDS.button) as HTMLButtonElement | null;
   // Use onclick assignment instead of addEventListener to avoid accumulating
