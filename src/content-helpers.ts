@@ -32,10 +32,13 @@ const SAFE_TX_KEYS = [
   'refundReceiver',
   'nonce',
 ] as const
-const UI_ANCHOR_SELECTORS = [
-  '[data-testid="safe-shield-widget"]',
+const REVIEW_ACTION_SELECTORS = [
   '[data-testid="continue-sign-btn"]',
   '[data-testid="sign-btn"]',
+]
+const UI_ANCHOR_SELECTORS = [
+  '[data-testid="safe-shield-widget"]',
+  ...REVIEW_ACTION_SELECTORS,
 ]
 
 type ReactFiberNode = {
@@ -197,6 +200,17 @@ export function getDraftTransactionFromPage(
   return null
 }
 
+export function isReviewScreen(documentRef: Document): boolean {
+  if (documentRef.querySelector(REVIEW_ACTION_SELECTORS.join(', '))) {
+    return true
+  }
+
+  return Array.from(documentRef.querySelectorAll('button')).some((button) => {
+    const text = button.textContent?.trim().toLowerCase() ?? ''
+    return text === 'continue' || text === 'sign' || text === 'execute'
+  })
+}
+
 function getUiAnchor(documentRef: Document): Element | null {
   for (const selector of UI_ANCHOR_SELECTORS) {
     const element = documentRef.querySelector(selector)
@@ -236,6 +250,10 @@ function mountUi(container: HTMLElement, documentRef: Document) {
   container.style.marginTop = '0'
   container.style.width = 'min(360px, calc(100vw - 32px))'
   container.style.minWidth = '300px'
+}
+
+export function removeUi(documentRef: Document) {
+  documentRef.getElementById(UI_IDS.container)?.remove()
 }
 
 export function ensureUi(documentRef: Document) {

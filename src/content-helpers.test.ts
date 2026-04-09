@@ -6,6 +6,8 @@ import {
   getCurrentSafeTxHashFromUrl,
   getDraftTransactionFromPage,
   getSafeAddressFromUrl,
+  isReviewScreen,
+  removeUi,
 } from './content-helpers'
 
 describe('getCurrentSafeTxHashFromUrl', () => {
@@ -105,6 +107,18 @@ describe('getDraftTransactionFromPage', () => {
   })
 })
 
+describe('isReviewScreen', () => {
+  it('returns true when review actions are present', () => {
+    document.body.innerHTML = '<button data-testid="continue-sign-btn">Continue</button>'
+    expect(isReviewScreen(document)).toBe(true)
+  })
+
+  it('returns false outside the review step', () => {
+    document.body.innerHTML = '<div>Not a review screen</div>'
+    expect(isReviewScreen(document)).toBe(false)
+  })
+})
+
 describe('ensureUi', () => {
   it('creates the UI once and reuses it on repeated calls', () => {
     document.body.innerHTML = ''
@@ -130,5 +144,12 @@ describe('ensureUi', () => {
 
     expect(safeShield?.nextElementSibling).toBe(container)
     expect(container.style.position).toBe('relative')
+  })
+
+  it('removes the UI when asked', () => {
+    document.body.innerHTML = ''
+    ensureUi(document)
+    removeUi(document)
+    expect(document.getElementById(UI_IDS.container)).toBeNull()
   })
 })

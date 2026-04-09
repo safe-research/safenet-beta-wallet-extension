@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { computeSafeTxHash, isModuleTransaction, loadSafeTransactionFromService, lookupProposal } from './safenet'
+import { computeSafeTxHash, encodeProposalTransactionData, explorerUrl, isModuleTransaction, loadSafeTransactionFromService, lookupProposal } from './safenet'
 import { CONSENSUS_DEPLOYMENT_BLOCK, DEFAULT_SETTINGS } from './constants'
 import { settingsSchema } from './schema'
 
@@ -48,6 +48,35 @@ describe('computeSafeTxHash', () => {
     const h1 = computeSafeTxHash({ ...BASE, safe: '0x1111111111111111111111111111111111111111' })
     const h2 = computeSafeTxHash({ ...BASE, safe: '0x3333333333333333333333333333333333333333' })
     expect(h1).not.toBe(h2)
+  })
+})
+
+describe('encodeProposalTransactionData', () => {
+  const payload = {
+    chainId: 1n,
+    safe: '0x1111111111111111111111111111111111111111' as `0x${string}`,
+    to: '0x2222222222222222222222222222222222222222' as `0x${string}`,
+    value: 3n,
+    data: '0xdeadbeef' as `0x${string}`,
+    operation: 0 as 0 | 1,
+    safeTxGas: 4n,
+    baseGas: 5n,
+    gasPrice: 6n,
+    gasToken: '0x0000000000000000000000000000000000000000' as `0x${string}`,
+    refundReceiver: '0x0000000000000000000000000000000000000000' as `0x${string}`,
+    nonce: 7n,
+  }
+
+  it('encodes proposeTransaction calldata', () => {
+    const data = encodeProposalTransactionData(DEFAULT_SETTINGS, payload)
+    expect(data.startsWith('0x')).toBe(true)
+    expect(data.length).toBeGreaterThan(10)
+  })
+
+  it('builds explorer links for a safe tx hash', () => {
+    expect(explorerUrl(1n, ('0x' + '1'.repeat(64)) as `0x${string}`)).toBe(
+      'https://explorer.safenet-beta.eth.limo/safeTx?chainId=1&safeTxHash=0x1111111111111111111111111111111111111111111111111111111111111111',
+    )
   })
 })
 

@@ -3,6 +3,8 @@
   const CONTENT_SOURCE = 'safenet-beta-content'
   const PAGE_BRIDGE_REQUEST = 'request-draft-tx'
   const PAGE_BRIDGE_RESPONSE = 'draft-tx-response'
+  const PAGE_BRIDGE_SUBMIT_REQUEST = 'submit-proposal'
+  const PAGE_BRIDGE_SUBMIT_RESPONSE = 'submit-proposal-response'
   const SAFE_TX_KEYS = [
     'to',
     'value',
@@ -76,21 +78,93 @@
     return null
   }
 
+  const getEthereum = () => {
+    if (window.ethereum && typeof window.ethereum.request === 'function') {
+      return window.ethereum
+    }
+    throw new Error('No injected wallet provider found on the Safe page')
+  }
+
+  const ensureChain = async (ethereum, chainIdHex) => {
+    const currentChainId = await ethereum.request({ method: 'eth_chainId' })
+    if (currentChainId === chainIdHex) return
+
+    try {
+      await ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: chainIdHex }],
+      })
+    } catch (error) {
+      const message = error && typeof error === 'object' && 'message' in error ? String(error.message) : String(error)
+      throw new Error(`Failed to switch wallet to consensus chain ${chainIdHex}: ${message}`)
+    }
+  }
+
+  const submitProposal = async (payload) => {
+    const ethereum = getEthereum()
+    const accounts = await ethereum.request({ method: 'eth_requestAccounts' })
+    const from = Array.isArray(accounts) ? accounts[0] : undefined
+    if (!from) throw new Error('No wallet account available for proposal submission')
+
+    await ensureChain(ethereum, payload.chainIdHex)
+
+    return ethereum.request({
+      method: 'eth_sendTransaction',
+      params: [
+        {
+          from,
+          to: payload.to,
+          data: payload.data,
+        },
+      ],
+    })
+  }
+
   window.addEventListener('message', (event) => {
     if (event.source !== window) return
     const data = event.data
-    if (!data || data.source !== CONTENT_SOURCE || data.type !== PAGE_BRIDGE_REQUEST) {
+    if (!data || data.source !== CONTENT_SOURCE) {
       return
     }
 
-    window.postMessage(
-      {
-        source: PAGE_BRIDGE_SOURCE,
-        type: PAGE_BRIDGE_RESPONSE,
-        requestId: data.requestId,
-        payload: findDraftTransaction(),
-      },
-      window.location.origin,
-    )
+    if (data.type === PAGE_BRIDGE_REQUEST) {
+      window.postMessage(
+        {
+          source: PAGE_BRIDGE_SOURCE,
+          type: PAGE_BRIDGE_RESPONSE,
+          requestId: data.requestId,
+          payload: findDraftTransaction(),
+        },
+        window.location.origin,
+      )
+      return
+    }
+
+    if (data.type === PAGE_BRIDGE_SUBMIT_REQUEST) {
+      submitProposal(data.payload)
+        .then((txHash) => {
+          window.postMessage(
+            {
+              source: PAGE_BRIDGE_SOURCE,
+              type: PAGE_BRIDGE_SUBMIT_RESPONSE,
+              requestId: data.requestId,
+              payload: { txHash },
+            },
+            window.location.origin,
+          )
+        })
+        .catch((error) => {
+          const message = error && typeof error === 'object' && 'message' in error ? String(error.message) : String(error)
+          window.postMessage(
+            {
+              source: PAGE_BRIDGE_SOURCE,
+              type: PAGE_BRIDGE_SUBMIT_RESPONSE,
+              requestId: data.requestId,
+              payload: { error: message },
+            },
+            window.location.origin,
+          )
+        })
+    }
   })
 })()
