@@ -36,7 +36,7 @@ describe('storage helpers', () => {
 
   it('returns defaults when storage is empty', async () => {
     getMock.mockResolvedValue({})
-    const { getSettings, DEFAULT_SETTINGS_TEST } = await import('./storage') as any
+    const { getSettings } = await import('./storage')
     const { DEFAULT_SETTINGS } = await import('./constants')
     const settings = await getSettings()
     expect(settings.consensus).toBe(DEFAULT_SETTINGS.consensus)
