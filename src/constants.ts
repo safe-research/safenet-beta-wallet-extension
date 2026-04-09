@@ -7,6 +7,11 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   autoRun: false,
 }
 
+// Deployment block of the consensus contract on the Safenet Beta chain.
+// Used as fromBlock in eth_getLogs to avoid scanning from genesis.
+// Update this to the actual deployment block to improve lookup performance.
+export const CONSENSUS_DEPLOYMENT_BLOCK = '0x0'
+
 export const SAFE_APP_MATCH = /^https:\/\/(app\.)?safe\.global\//
 
 export const UI_IDS = {

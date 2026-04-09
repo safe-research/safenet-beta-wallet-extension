@@ -10,6 +10,7 @@ import {
   type Hex,
 } from 'viem'
 import type { ExtensionSettings, ProposalLookupResult, SafeTransactionPayload } from './types'
+import { CONSENSUS_DEPLOYMENT_BLOCK } from './constants'
 
 const transactionProposedEvent = parseAbiItem(
   'event TransactionProposed(bytes32 indexed safeTxHash, uint256 indexed chainId, address indexed safe, uint64 epoch, (uint256 chainId, address safe, address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, uint256 nonce) transaction)',
@@ -80,7 +81,7 @@ export async function lookupProposal(
     params: [
       {
         address: getAddress(settings.consensus),
-        fromBlock: '0x0',
+        fromBlock: CONSENSUS_DEPLOYMENT_BLOCK,
         toBlock: 'latest',
         topics,
       },

@@ -1,23 +1,38 @@
 import { UI_IDS } from "./constants";
 import {
-  computeSafeTxHash,
   isModuleTransaction,
   loadSafeTransactionFromService,
   lookupProposal,
   submitProposal,
 } from "./safenet";
 import { getSettings } from "./storage";
-import type { ProposalStatus, SafeTransactionPayload } from "./types";
+import type {
+  ExtensionSettings,
+  ProposalLookupResult,
+  ProposalStatus,
+  SafeTransactionPayload,
+} from "./types";
 
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
 let lastAutoRunKey: string | null = null;
 
 function getCurrentSafeTxHashFromUrl(): `0x${string}` | null {
   const url = new URL(window.location.href);
   const id = url.searchParams.get("id");
-  return id?.startsWith("0x") && id.length === 66
-    ? (id as `0x${string}`)
-    : null;
+  if (!id) return null;
+
+  // Direct 32-byte hash: ?id=0x<64 hex chars>
+  if (id.startsWith("0x") && id.length === 66) {
+    return id as `0x${string}`;
+  }
+
+  // Safe Wallet format: multisig_<safeAddress>_<safeTxHash>
+  // e.g. multisig_0xSAFE_0xSAFETXHASH
+  const lastPart = id.split("_").at(-1);
+  if (lastPart?.startsWith("0x") && lastPart.length === 66) {
+    return lastPart as `0x${string}`;
+  }
+
+  return null;
 }
 
 const CHAIN_PREFIX_MAP: Record<string, bigint> = {
@@ -45,26 +60,6 @@ function getChainIdFromUrl(): bigint {
   return CHAIN_PREFIX_MAP[prefix] ?? 11155111n;
 }
 
-function readDraftTransactionFromDom(): SafeTransactionPayload | null {
-  const rootText = document.body.innerText;
-  const safeAddressMatch = rootText.match(/0x[a-fA-F0-9]{40}/g);
-  if (!safeAddressMatch || safeAddressMatch.length < 2) return null;
-  return {
-    chainId: getChainIdFromUrl(),
-    safe: safeAddressMatch[0] as `0x${string}`,
-    to: safeAddressMatch[1] as `0x${string}`,
-    value: 0n,
-    data: "0x",
-    operation: 0,
-    safeTxGas: 0n,
-    baseGas: 0n,
-    gasPrice: 0n,
-    gasToken: ZERO_ADDRESS,
-    refundReceiver: ZERO_ADDRESS,
-    nonce: 0n,
-  };
-}
-
 async function resolveTransaction(): Promise<{
   payload: SafeTransactionPayload;
   safeTxHash: `0x${string}`;
@@ -77,9 +72,22 @@ async function resolveTransaction(): Promise<{
     if (payload) return { payload, safeTxHash: urlHash };
   }
 
-  const draft = readDraftTransactionFromDom();
-  if (!draft) return null;
-  return { payload: draft, safeTxHash: computeSafeTxHash(draft) };
+  // Draft transactions (no URL hash) cannot be reliably resolved without
+  // deeper Safe Wallet integration. Return null to show a clear message.
+  return null;
+}
+
+async function waitForTransaction(
+  maxWait = 10000,
+  interval = 500,
+): Promise<{ payload: SafeTransactionPayload; safeTxHash: `0x${string}` } | null> {
+  const deadline = Date.now() + maxWait;
+  while (Date.now() < deadline) {
+    const resolved = await resolveTransaction();
+    if (resolved) return resolved;
+    await new Promise<void>((r) => setTimeout(r, interval));
+  }
+  return null;
 }
 
 function ensureUi() {
@@ -159,11 +167,31 @@ function setStatus(status: ProposalStatus, message: string, link?: string) {
   if (button) button.disabled = status === "loading";
 }
 
+async function pollForAttestation(
+  settings: ExtensionSettings,
+  safeTxHash: `0x${string}`,
+  chainId: bigint,
+  safe: `0x${string}`,
+  maxWait = 15000,
+  interval = 4000,
+): Promise<ProposalLookupResult> {
+  const deadline = Date.now() + maxWait;
+  let last: ProposalLookupResult = { exists: false, attested: false };
+  while (Date.now() < deadline) {
+    await new Promise<void>((r) => setTimeout(r, interval));
+    last = await lookupProposal(settings, safeTxHash, chainId, safe);
+    if (last.attested) return last;
+  }
+  return last;
+}
+
 async function runCheck(mode: "manual" | "auto" = "manual") {
   const settings = await getSettings();
   const resolved = await resolveTransaction();
   if (!resolved) {
-    setStatus("failed", "Transaction details not available yet");
+    if (mode === "manual") {
+      setStatus("failed", "No transaction found on this page");
+    }
     return;
   }
 
@@ -186,17 +214,31 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
       payload.chainId,
       payload.safe,
     );
+    if (existing.attested) {
+      setStatus("passed", "Passed", existing.explorerUrl);
+      return;
+    }
     if (existing.exists) {
+      // Already proposed but not yet attested - poll for attestation
+      setStatus("loading", "Proposed, waiting for attestation...");
+      const result = await pollForAttestation(
+        settings,
+        safeTxHash,
+        payload.chainId,
+        payload.safe,
+      );
       setStatus(
-        existing.attested ? "passed" : "failed",
-        existing.attested ? "Passed" : "failed check",
-        existing.explorerUrl,
+        result.attested ? "passed" : "failed",
+        result.attested ? "Passed" : "failed check",
+        result.explorerUrl,
       );
       return;
     }
 
+    // No proposal found - submit, then poll
     await submitProposal(settings, payload);
-    const afterSubmit = await lookupProposal(
+    setStatus("loading", "Submitted, waiting for attestation...");
+    const afterSubmit = await pollForAttestation(
       settings,
       safeTxHash,
       payload.chainId,
@@ -207,8 +249,9 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
       afterSubmit.attested ? "Passed" : "failed check",
       afterSubmit.explorerUrl,
     );
-  } catch {
-    setStatus("failed", "failed check");
+  } catch (err) {
+    console.error("[Safenet Beta] Check failed:", err);
+    setStatus("failed", "Check error - see console");
   }
 }
 
@@ -221,9 +264,10 @@ async function init() {
 
   const settings = await getSettings();
   if (settings.autoRun) {
-    setTimeout(() => {
-      void runCheck("auto");
-    }, 1500);
+    void (async () => {
+      const resolved = await waitForTransaction();
+      if (resolved) void runCheck("auto");
+    })();
   }
 }
 
