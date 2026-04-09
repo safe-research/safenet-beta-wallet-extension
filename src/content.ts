@@ -60,6 +60,7 @@ let lastAutoRunKey: string | null = null;
 let requestIdCounter = 0;
 let pageBridgeReady = false;
 let pageBridgePromise: Promise<void> | null = null;
+let initScheduled = false;
 
 window.addEventListener("message", (event: MessageEvent) => {
   if (event.source !== window) return;
@@ -420,6 +421,15 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
   }
 }
 
+function scheduleInit(delay = 150) {
+  if (initScheduled) return;
+  initScheduled = true;
+  window.setTimeout(() => {
+    initScheduled = false;
+    void init();
+  }, delay);
+}
+
 async function init() {
   log("Initialising on", window.location.href);
   void ensurePageBridgeInjected();
@@ -446,14 +456,24 @@ setInterval(() => {
   if (window.location.href !== lastHref) {
     lastHref = window.location.href;
     lastAutoRunKey = null;
-    void init();
+    scheduleInit(0);
   }
 }, 1000);
 
+const observer = new MutationObserver(() => {
+  if (isReviewScreen(document) || document.getElementById(UI_IDS.container)) {
+    scheduleInit();
+  }
+});
+observer.observe(document.documentElement, {
+  childList: true,
+  subtree: true,
+});
+
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", () => void init(), {
+  document.addEventListener("DOMContentLoaded", () => scheduleInit(0), {
     once: true,
   });
 } else {
-  void init();
+  scheduleInit(0);
 }

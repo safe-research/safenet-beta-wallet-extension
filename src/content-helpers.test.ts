@@ -113,6 +113,11 @@ describe('isReviewScreen', () => {
     expect(isReviewScreen(document)).toBe(true)
   })
 
+  it('returns true when Safe Shield is present even before action buttons mount', () => {
+    document.body.innerHTML = '<div data-testid="safe-shield-widget">Safe Shield</div>'
+    expect(isReviewScreen(document)).toBe(true)
+  })
+
   it('returns false outside the review step', () => {
     document.body.innerHTML = '<div>Not a review screen</div>'
     expect(isReviewScreen(document)).toBe(false)

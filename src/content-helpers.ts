@@ -201,7 +201,20 @@ export function getDraftTransactionFromPage(
 }
 
 export function isReviewScreen(documentRef: Document): boolean {
+  if (documentRef.querySelector('[data-testid="safe-shield-widget"]')) {
+    return true
+  }
+
   if (documentRef.querySelector(REVIEW_ACTION_SELECTORS.join(', '))) {
+    return true
+  }
+
+  if (
+    Array.from(documentRef.querySelectorAll('[role="dialog"], section, article, div')).some((element) => {
+      const text = element.textContent?.toLowerCase() ?? ''
+      return text.includes('confirm transaction') || text.includes('safe shield')
+    })
+  ) {
     return true
   }
 
