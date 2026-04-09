@@ -14,6 +14,9 @@ manifest.action.default_popup = 'popup.html'
 const sha = process.env.GIT_SHA ?? (() => {
   try { return execSync('git rev-parse --short HEAD', { stdio: ['pipe', 'pipe', 'ignore'] }).toString().trim() } catch { return '' }
 })()
-if (sha) manifest.name = `${manifest.name} (${sha})`
+if (sha) {
+  manifest.name = `${manifest.name} (${sha})`
+  manifest.description = `${manifest.description} Build: ${sha}.`
+}
 
 await writeFile('dist/manifest.json', JSON.stringify(manifest, null, 2))

@@ -1,3 +1,6 @@
+// This log fires at module load time - if you see it, the content script is running.
+console.log("[Safenet Beta] content script loaded");
+
 import { UI_IDS } from "./constants";
 import {
   isModuleTransaction,
