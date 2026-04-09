@@ -99,7 +99,9 @@ export async function lookupProposal(
       })
       if (proposedDecoded.eventName === 'TransactionProposed') proposed = true
       continue
-    } catch {}
+    } catch {
+      // not a TransactionProposed log; try next ABI
+    }
 
     try {
       const attestedDecoded = decodeEventLog({
@@ -108,7 +110,9 @@ export async function lookupProposal(
         topics: log.topics,
       })
       if (attestedDecoded.eventName === 'TransactionAttested') attested = true
-    } catch {}
+    } catch {
+      // not a TransactionAttested log; skip
+    }
   }
 
   return {
