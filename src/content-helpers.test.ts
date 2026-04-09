@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { UI_IDS } from './constants'
-import { ensureUi, getChainIdFromUrl, getCurrentSafeTxHashFromUrl } from './content-helpers'
+import {
+  ensureUi,
+  getChainIdFromUrl,
+  getCurrentSafeTxHashFromUrl,
+  getDraftTransactionFromPage,
+  getSafeAddressFromUrl,
+} from './content-helpers'
 
 describe('getCurrentSafeTxHashFromUrl', () => {
   it('parses a direct safeTxHash from the id query param', () => {
@@ -20,6 +26,21 @@ describe('getCurrentSafeTxHashFromUrl', () => {
   })
 })
 
+describe('getSafeAddressFromUrl', () => {
+  it('parses the safe address from the safe query param', () => {
+    expect(
+      getSafeAddressFromUrl(
+        'https://app.safe.global/home?safe=gno:0x1111111111111111111111111111111111111111',
+      ),
+    ).toBe('0x1111111111111111111111111111111111111111')
+  })
+
+  it('returns null for missing or invalid safe params', () => {
+    expect(getSafeAddressFromUrl('https://app.safe.global/home')).toBeNull()
+    expect(getSafeAddressFromUrl('https://app.safe.global/home?safe=gno:not-an-address')).toBeNull()
+  })
+})
+
 describe('getChainIdFromUrl', () => {
   it('maps known Safe prefixes correctly', () => {
     expect(getChainIdFromUrl('https://app.safe.global/home?safe=eth:0x123')).toBe(1n)
@@ -30,6 +51,57 @@ describe('getChainIdFromUrl', () => {
   it('falls back to Sepolia for unknown or missing prefixes', () => {
     expect(getChainIdFromUrl('https://app.safe.global/home?safe=unknown:0x123')).toBe(11155111n)
     expect(getChainIdFromUrl('https://app.safe.global/home')).toBe(11155111n)
+  })
+})
+
+describe('getDraftTransactionFromPage', () => {
+  it('extracts draft tx data from React fiber props on the review page', () => {
+    document.body.innerHTML = '<button data-testid="continue-sign-btn">Continue</button>'
+
+    const button = document.querySelector('[data-testid="continue-sign-btn"]') as HTMLButtonElement &
+      Record<string, unknown>
+    button.__reactFiber$test = {
+      memoizedProps: { children: 'Continue' },
+      return: {
+        memoizedProps: {
+          safeTx: {
+            data: {
+              to: '0x2222222222222222222222222222222222222222',
+              value: '123',
+              data: '0xdeadbeef',
+              operation: 1,
+              safeTxGas: '45',
+              baseGas: '6',
+              gasPrice: '7',
+              gasToken: '0x3333333333333333333333333333333333333333',
+              refundReceiver: '0x4444444444444444444444444444444444444444',
+              nonce: 9,
+            },
+          },
+        },
+        return: null,
+      },
+    }
+
+    expect(
+      getDraftTransactionFromPage(
+        document,
+        'https://app.safe.global/transactions/tx?safe=gno:0x1111111111111111111111111111111111111111',
+      ),
+    ).toEqual({
+      chainId: 100n,
+      safe: '0x1111111111111111111111111111111111111111',
+      to: '0x2222222222222222222222222222222222222222',
+      value: 123n,
+      data: '0xdeadbeef',
+      operation: 1,
+      safeTxGas: 45n,
+      baseGas: 6n,
+      gasPrice: 7n,
+      gasToken: '0x3333333333333333333333333333333333333333',
+      refundReceiver: '0x4444444444444444444444444444444444444444',
+      nonce: 9n,
+    })
   })
 })
 
@@ -44,5 +116,19 @@ describe('ensureUi', () => {
     expect(document.querySelectorAll(`#${UI_IDS.container}`)).toHaveLength(1)
     expect(document.getElementById(UI_IDS.button)?.textContent).toBe('Run check')
     expect(document.getElementById(UI_IDS.status)?.textContent).toBe('Idle')
+  })
+
+  it('mounts the UI directly below the Safe Shield widget when present', () => {
+    document.body.innerHTML = `
+      <section>
+        <div data-testid="safe-shield-widget">Safe Shield</div>
+      </section>
+    `
+
+    const container = ensureUi(document)
+    const safeShield = document.querySelector('[data-testid="safe-shield-widget"]')
+
+    expect(safeShield?.nextElementSibling).toBe(container)
+    expect(container.style.position).toBe('relative')
   })
 })

@@ -2,8 +2,14 @@
 console.log("[Safenet Beta] content script loaded");
 
 import { UI_IDS } from "./constants";
-import { ensureUi, getChainIdFromUrl, getCurrentSafeTxHashFromUrl } from "./content-helpers";
 import {
+  ensureUi,
+  getChainIdFromUrl,
+  getCurrentSafeTxHashFromUrl,
+  getDraftTransactionFromPage,
+} from "./content-helpers";
+import {
+  computeSafeTxHash,
   isModuleTransaction,
   loadSafeTransactionFromService,
   lookupProposal,
@@ -26,8 +32,9 @@ async function resolveTransaction(): Promise<{
   payload: SafeTransactionPayload;
   safeTxHash: `0x${string}`;
 } | null> {
-  const urlHash = getCurrentSafeTxHashFromUrl(window.location.href);
-  const chainId = getChainIdFromUrl(window.location.href);
+  const href = window.location.href;
+  const urlHash = getCurrentSafeTxHashFromUrl(href);
+  const chainId = getChainIdFromUrl(href);
 
   if (urlHash) {
     log("Loading tx from Safe service:", urlHash);
@@ -39,8 +46,13 @@ async function resolveTransaction(): Promise<{
     log("Safe service returned null for hash:", urlHash);
   }
 
-  // Draft transactions (no URL hash) cannot be reliably resolved without
-  // deeper Safe Wallet integration. Return null to show a clear message.
+  const draftPayload = getDraftTransactionFromPage(document, href);
+  if (draftPayload) {
+    const safeTxHash = computeSafeTxHash(draftPayload);
+    log("Draft tx recovered from Safe Wallet page:", { safeTxHash, payload: draftPayload });
+    return { payload: draftPayload, safeTxHash };
+  }
+
   return null;
 }
 
@@ -68,6 +80,7 @@ function ensurePageUi() {
 
 function setStatus(status: ProposalStatus, message: string, link?: string) {
   log(`Status: ${status} — ${message}${link ? ` (${link})` : ""}`);
+  ensurePageUi();
   const statusEl = document.getElementById(UI_IDS.status);
   const button = document.getElementById(
     UI_IDS.button,
@@ -75,16 +88,26 @@ function setStatus(status: ProposalStatus, message: string, link?: string) {
   if (!statusEl) return;
 
   statusEl.innerHTML = "";
+  statusEl.setAttribute("data-status", status);
+  statusEl.style.background =
+    status === "passed"
+      ? "#ecfdf3"
+      : status === "failed"
+        ? "#fff1f2"
+        : status === "unsupported"
+          ? "#fff7e6"
+          : "#f4f5f7";
+  statusEl.style.color =
+    status === "passed"
+      ? "#027a48"
+      : status === "failed"
+        ? "#b42318"
+        : status === "unsupported"
+          ? "#b54708"
+          : "#3b4248";
+
   const text = document.createElement("span");
   text.textContent = message;
-  text.style.color =
-    status === "passed"
-      ? "#34d399"
-      : status === "failed"
-        ? "#f87171"
-        : status === "unsupported"
-          ? "#fbbf24"
-          : "#f9fafb";
   statusEl.appendChild(text);
 
   if (link) {
@@ -93,7 +116,9 @@ function setStatus(status: ProposalStatus, message: string, link?: string) {
     anchor.textContent = " Open explorer";
     anchor.target = "_blank";
     anchor.rel = "noreferrer";
-    anchor.style.color = "#93c5fd";
+    anchor.style.color = "inherit";
+    anchor.style.fontWeight = "600";
+    anchor.style.textDecoration = "underline";
     statusEl.appendChild(anchor);
   }
 
@@ -125,11 +150,16 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
   log(`Running check (mode: ${mode})`);
   const settings = await getSettings();
   log("Settings:", settings);
-  const resolved = await resolveTransaction();
+  const resolved =
+    (await resolveTransaction()) ??
+    (mode === "manual" ? await waitForTransaction(3000, 250) : null);
   if (!resolved) {
     log("Could not resolve transaction");
     if (mode === "manual") {
-      setStatus("failed", "No transaction found on this page");
+      setStatus(
+        "failed",
+        "No transaction found yet. Open the Safe review step or wait for the draft transaction details to finish loading.",
+      );
     }
     return;
   }
