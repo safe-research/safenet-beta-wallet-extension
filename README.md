@@ -30,16 +30,18 @@ npm run build
 1. Run `npm run build`
 2. Open `chrome://extensions` or `brave://extensions`
 3. Enable Developer Mode
-4. Load unpacked
-5. Select the `dist/` directory
+4. Load unpacked → select the `dist/` directory
 
 ### Firefox
 
 1. Run `npm run build`
-2. Open `about:debugging`
-3. Choose `This Firefox`
-4. Load Temporary Add-on
-5. Select `dist/manifest.json`
+2. Open `about:debugging` → This Firefox
+3. Load Temporary Add-on → select `dist/manifest.json`
+
+### Installing from the downloaded zip
+
+Extract the zip - `manifest.json` will be at the root of the extracted folder.
+Load that folder directly (Chrome/Brave) or select `manifest.json` from it (Firefox).
 
 ## Settings
 
