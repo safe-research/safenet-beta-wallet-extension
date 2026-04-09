@@ -83,8 +83,12 @@ async function waitForTransaction(
 ): Promise<{ payload: SafeTransactionPayload; safeTxHash: `0x${string}` } | null> {
   const deadline = Date.now() + maxWait;
   while (Date.now() < deadline) {
-    const resolved = await resolveTransaction();
-    if (resolved) return resolved;
+    try {
+      const resolved = await resolveTransaction();
+      if (resolved) return resolved;
+    } catch {
+      // service not ready yet - keep polling
+    }
     await new Promise<void>((r) => setTimeout(r, interval));
   }
   return null;
@@ -257,10 +261,10 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
 
 async function init() {
   ensureUi();
-  const button = document.getElementById(UI_IDS.button);
-  button?.addEventListener("click", () => {
-    void runCheck("manual");
-  });
+  const button = document.getElementById(UI_IDS.button) as HTMLButtonElement | null;
+  // Use onclick assignment instead of addEventListener to avoid accumulating
+  // duplicate handlers across SPA navigations when the UI element persists.
+  if (button) button.onclick = () => void runCheck("manual");
 
   const settings = await getSettings();
   if (settings.autoRun) {
