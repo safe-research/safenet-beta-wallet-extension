@@ -202,40 +202,40 @@ function setStatus(status: ProposalStatus, message: string, link?: string) {
   if (status === "loading") {
     if (iconEl) { iconEl.textContent = "↻"; iconEl.style.color = "rgba(255, 255, 255, 0.6)"; }
     if (button) { button.textContent = "Running..."; button.disabled = true; button.style.display = ""; button.style.opacity = "0.5"; button.style.cursor = "not-allowed"; }
-    const text = document.createElement("span");
-    text.textContent = message;
-    text.style.color = "rgba(255, 255, 255, 0.6)";
-    statusEl.appendChild(text);
     if (link) {
       const anchor = document.createElement("a");
       anchor.href = link;
-      anchor.textContent = "View ↗";
-      anchor.style.marginLeft = "6px";
+      anchor.textContent = message + " ↗";
       anchor.target = "_blank";
       anchor.rel = "noreferrer";
       anchor.style.color = "#12FF80";
       anchor.style.fontWeight = "600";
       anchor.style.textDecoration = "underline";
       statusEl.appendChild(anchor);
+    } else {
+      const text = document.createElement("span");
+      text.textContent = message;
+      text.style.color = "rgba(255, 255, 255, 0.6)";
+      statusEl.appendChild(text);
     }
   } else if (status === "passed") {
     if (iconEl) { iconEl.textContent = "✓"; iconEl.style.color = "#00B460"; }
     if (button) { button.style.display = "none"; }
-    const text = document.createElement("span");
-    text.textContent = message;
-    text.style.color = "#00B460";
-    statusEl.appendChild(text);
     if (link) {
       const anchor = document.createElement("a");
       anchor.href = link;
-      anchor.textContent = "View ↗";
-      anchor.style.marginLeft = "6px";
+      anchor.textContent = message + " ↗";
       anchor.target = "_blank";
       anchor.rel = "noreferrer";
-      anchor.style.color = "#12FF80";
+      anchor.style.color = "#00B460";
       anchor.style.fontWeight = "600";
       anchor.style.textDecoration = "underline";
       statusEl.appendChild(anchor);
+    } else {
+      const text = document.createElement("span");
+      text.textContent = message;
+      text.style.color = "#00B460";
+      statusEl.appendChild(text);
     }
   } else if (status === "failed") {
     if (iconEl) { iconEl.textContent = "✗"; iconEl.style.color = "#FF5F52"; }
