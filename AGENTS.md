@@ -14,11 +14,14 @@ This repository contains the Safenet Beta Wallet Extension, a browser extension 
 
 ## Important implementation notes
 
-- SafeTxHash logic should stay aligned with Safenet explorer behavior.
-- Proposal lookup should prefer the explorer pattern: check consensus logs by SafeTxHash before submitting.
-- User-facing failure text for missing attestation should remain exactly `failed check` unless product requirements change.
-- Supported transaction scope for v1 is any Safe transaction except module transactions.
-- Configuration overrides live in the popup, not a separate options surface.
+- SafeTxHash logic must stay aligned with Safenet explorer and consensus contract behavior.
+- Proposal lookup always runs first (check consensus logs by SafeTxHash); only submit via relayer if not yet proposed.
+- Widget is an inline row below the SafeShield widget, not a floating overlay. It only renders on review/confirm screens detected via `[data-testid="continue-sign-btn"]` and `[data-testid="sign-btn"]` — not on the new-transaction form.
+- Draft transaction data is extracted from the React fiber tree via `page-bridge.js` (injected into page context) and via direct fiber walking from known anchor elements.
+- Status flow: Polling → Submitted (once TransactionProposed seen on-chain) → Attested (green) or Failed to attest (red, with explorer link) or Failed to submit (yellow, retriable).
+- Explorer URL: `https://explorer.safenet-beta.eth.limo/#/safeTx?chainId=...&safeTxHash=...`
+- Supported transaction scope: any Safe transaction except module transactions (operation != 0 and != 1).
+- Configuration (consensus address, RPC, relayer URL) lives in the popup, not a separate options surface.
 
 ## When editing this repo
 
