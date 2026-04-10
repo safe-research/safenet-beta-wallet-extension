@@ -201,13 +201,12 @@ export function getDraftTransactionFromPage(
 }
 
 export function isReviewScreen(documentRef: Document): boolean {
-  // Use data-testid selectors only — they are specific to the review/signing
-  // step and won't match the new-transaction creation form, which also has a
-  // generic "Continue" button that caused false positives.
-  return (
-    documentRef.querySelector('[data-testid="safe-shield-widget"]') !== null ||
-    documentRef.querySelector(REVIEW_ACTION_SELECTORS.join(', ')) !== null
-  )
+  // The SafeShield widget ([data-testid="safe-shield-widget"]) is present on
+  // ALL steps of the new-transaction flow (including the "New transaction"
+  // form), so it cannot be used to distinguish the review/confirm steps.
+  // Only the action buttons are specific to confirm ("Continue") and review
+  // ("Sign"), so we rely solely on those.
+  return documentRef.querySelector(REVIEW_ACTION_SELECTORS.join(', ')) !== null
 }
 
 function getUiAnchor(documentRef: Document): Element | null {

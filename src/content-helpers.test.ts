@@ -113,9 +113,9 @@ describe('isReviewScreen', () => {
     expect(isReviewScreen(document)).toBe(true)
   })
 
-  it('returns true when Safe Shield is present even before action buttons mount', () => {
+  it('returns false when only the Safe Shield widget is present (it appears on the new-transaction form too)', () => {
     document.body.innerHTML = '<div data-testid="safe-shield-widget">Safe Shield</div>'
-    expect(isReviewScreen(document)).toBe(true)
+    expect(isReviewScreen(document)).toBe(false)
   })
 
   it('returns false outside the review step', () => {
