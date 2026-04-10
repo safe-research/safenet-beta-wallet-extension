@@ -329,20 +329,15 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
       return;
     }
     if (existing.exists) {
-      // Proposed but not yet attested. Link to the Gnosis Chain tx if we have
-      // it; switch to the Safenet explorer only after attestation.
-      setStatus(
-        "loading",
-        "Proposed, waiting for attestation...",
-        existing.txHash ? gnosisscanTxUrl(existing.txHash) : undefined,
-      );
+      // Proposed but not yet attested. The Safenet explorer already knows the
+      // tx at this point, so link there. Gnosisscan tx is logged to console.
+      setStatus("loading", "Proposed, waiting for attestation...", explorer);
       const result = await pollForAttestation(
         settings,
         safeTxHash,
         payload.chainId,
         payload.safe,
-        (txHash) =>
-          setStatus("loading", "Proposed, waiting for attestation...", gnosisscanTxUrl(txHash)),
+        (txHash) => log("Gnosis chain proposal tx:", txHash, gnosisscanTxUrl(txHash)),
       );
       setStatus(
         result.attested ? "passed" : "failed",
@@ -358,16 +353,15 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
     log("Submitting proposal via relayer:", settings.relayerUrl);
     await submitProposal(settings, payload);
     log("Proposal submitted via relayer");
-    // No Gnosis tx hash yet — relayer doesn't return one. The callback below
-    // will add the Gnosisscan link as soon as the first poll sees the log.
-    setStatus("loading", "Submitted, waiting for attestation...");
+    // The Safenet explorer will index the tx once the relayer's on-chain call
+    // lands, so link there from the start. Gnosisscan tx is logged to console.
+    setStatus("loading", "Submitted, waiting for attestation...", explorer);
     const afterSubmit = await pollForAttestation(
       settings,
       safeTxHash,
       payload.chainId,
       payload.safe,
-      (txHash) =>
-        setStatus("loading", "Submitted, waiting for attestation...", gnosisscanTxUrl(txHash)),
+      (txHash) => log("Gnosis chain proposal tx:", txHash, gnosisscanTxUrl(txHash)),
     );
     setStatus(
       afterSubmit.attested ? "passed" : "failed",
