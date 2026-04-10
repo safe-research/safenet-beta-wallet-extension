@@ -25,4 +25,6 @@ export type ProposalLookupResult = {
   exists: boolean
   attested: boolean
   explorerUrl?: string
+  /** Gnosis Chain tx hash of the TransactionProposed or TransactionAttested event */
+  txHash?: `0x${string}`
 }

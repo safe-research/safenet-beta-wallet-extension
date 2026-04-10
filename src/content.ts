@@ -250,6 +250,13 @@ async function pollForAttestation(
     log("Polling for attestation...");
     last = await lookupProposal(settings, safeTxHash, chainId, safe);
     log("Lookup result:", last);
+    if (last.txHash) {
+      log(
+        "Gnosis chain tx:",
+        last.txHash,
+        `https://gnosisscan.io/tx/${last.txHash}`,
+      );
+    }
     if (last.attested) return last;
   }
   log("Attestation poll timed out");
@@ -301,6 +308,13 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
       payload.safe,
     );
     log("Existing proposal:", existing);
+    if (existing.txHash) {
+      log(
+        "Gnosis chain tx:",
+        existing.txHash,
+        `https://gnosisscan.io/tx/${existing.txHash}`,
+      );
+    }
 
     if (existing.attested) {
       setStatus("passed", "Passed", existing.explorerUrl ?? explorer);
@@ -327,16 +341,9 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
     log("Safe tx data used for submit:", payload);
     log("Safe tx hash used for submit:", safeTxHash);
     log("Submitting proposal via relayer:", settings.relayerUrl);
-    const relayerTxHash = await submitProposal(settings, payload);
-    const gnosisScanUrl = relayerTxHash
-      ? `https://gnosisscan.io/tx/${relayerTxHash}`
-      : undefined;
-    if (relayerTxHash) {
-      log("Proposal submitted. Gnosis chain tx:", relayerTxHash, gnosisScanUrl);
-    } else {
-      log("Proposal submitted via relayer (no tx hash in response)");
-    }
-    setStatus("loading", "Submitted, waiting for attestation...", gnosisScanUrl ?? explorer);
+    await submitProposal(settings, payload);
+    log("Proposal submitted via relayer");
+    setStatus("loading", "Submitted, waiting for attestation...", explorer);
     const afterSubmit = await pollForAttestation(
       settings,
       safeTxHash,

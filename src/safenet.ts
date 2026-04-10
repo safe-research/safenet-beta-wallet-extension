@@ -101,15 +101,19 @@ export async function lookupProposal(
 
   let proposed = false
   let attested = false
+  let txHash: `0x${string}` | undefined
 
-  for (const log of rawLogs as Array<{ data: Hex; topics: [Hex, ...Hex[]] }>) {
+  for (const log of rawLogs as Array<{ data: Hex; topics: [Hex, ...Hex[]]; transactionHash: `0x${string}` }>) {
     try {
       const proposedDecoded = decodeLog({
         abi: [transactionProposedEvent],
         data: log.data,
         topics: log.topics,
       })
-      if (proposedDecoded.eventName === 'TransactionProposed') proposed = true
+      if (proposedDecoded.eventName === 'TransactionProposed') {
+        proposed = true
+        txHash = txHash ?? log.transactionHash
+      }
       continue
     } catch {
       // not a TransactionProposed log; try next ABI
@@ -121,7 +125,10 @@ export async function lookupProposal(
         data: log.data,
         topics: log.topics,
       })
-      if (attestedDecoded.eventName === 'TransactionAttested') attested = true
+      if (attestedDecoded.eventName === 'TransactionAttested') {
+        attested = true
+        txHash = log.transactionHash // prefer the attestation tx hash
+      }
     } catch {
       // not a TransactionAttested log; skip
     }
@@ -130,6 +137,7 @@ export async function lookupProposal(
   return {
     exists: proposed || attested,
     attested,
+    txHash,
     explorerUrl: proposed || attested ? explorerUrl(chainId, safeTxHash) : undefined,
   }
 }
@@ -164,11 +172,7 @@ export async function loadSafeTransactionFromService(chainId: bigint, safeTxHash
   } satisfies SafeTransactionPayload
 }
 
-/**
- * Submits a proposal to the relayer and returns the Gnosis Chain tx hash if
- * the relayer includes one in its response body (field: txHash or hash).
- */
-export async function submitProposal(settings: ExtensionSettings, payload: SafeTransactionPayload): Promise<`0x${string}` | undefined> {
+export async function submitProposal(settings: ExtensionSettings, payload: SafeTransactionPayload): Promise<void> {
   if (!isAddress(settings.consensus)) throw new Error('Invalid consensus address')
   const response = await fetch(settings.relayerUrl, {
     method: 'POST',
@@ -190,13 +194,4 @@ export async function submitProposal(settings: ExtensionSettings, payload: SafeT
   })
 
   if (!response.ok) throw new Error('Proposal submission failed')
-
-  try {
-    const json = await response.json() as Record<string, unknown>
-    const hash = json?.txHash ?? json?.hash ?? json?.transactionHash
-    if (typeof hash === 'string' && hash.startsWith('0x')) return hash as `0x${string}`
-  } catch {
-    // response body not JSON or no tx hash field — not a hard error
-  }
-  return undefined
 }
