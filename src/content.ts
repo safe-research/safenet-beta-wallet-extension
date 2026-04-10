@@ -235,27 +235,34 @@ function setStatus(status: ProposalStatus, message: string, link?: string) {
   if (button) button.disabled = status === "loading";
 }
 
+function gnosisscanTxUrl(txHash: `0x${string}`) {
+  return `https://gnosisscan.io/tx/${txHash}` as const;
+}
+
 async function pollForAttestation(
   settings: ExtensionSettings,
   safeTxHash: `0x${string}`,
   chainId: bigint,
   safe: `0x${string}`,
+  /** Called once, the first time a Gnosis Chain tx hash is seen in the logs. */
+  onFirstTxHash?: (txHash: `0x${string}`) => void,
   maxWait = 60000,
   interval = 4000,
 ): Promise<ProposalLookupResult> {
   const deadline = Date.now() + maxWait;
   let last: ProposalLookupResult = { exists: false, attested: false };
+  let txHashReported = false;
   while (Date.now() < deadline) {
     await new Promise<void>((r) => setTimeout(r, interval));
     log("Polling for attestation...");
     last = await lookupProposal(settings, safeTxHash, chainId, safe);
     log("Lookup result:", last);
     if (last.txHash) {
-      log(
-        "Gnosis chain tx:",
-        last.txHash,
-        `https://gnosisscan.io/tx/${last.txHash}`,
-      );
+      log("Gnosis chain tx:", last.txHash, gnosisscanTxUrl(last.txHash));
+      if (!txHashReported) {
+        txHashReported = true;
+        onFirstTxHash?.(last.txHash);
+      }
     }
     if (last.attested) return last;
   }
@@ -317,17 +324,25 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
     }
 
     if (existing.attested) {
+      // Already attested — Safenet explorer is indexed, link there directly.
       setStatus("passed", "Passed", existing.explorerUrl ?? explorer);
       return;
     }
     if (existing.exists) {
-      // Already proposed but not yet attested - poll for attestation
-      setStatus("loading", "Proposed, waiting for attestation...", existing.explorerUrl ?? explorer);
+      // Proposed but not yet attested. Link to the Gnosis Chain tx if we have
+      // it; switch to the Safenet explorer only after attestation.
+      setStatus(
+        "loading",
+        "Proposed, waiting for attestation...",
+        existing.txHash ? gnosisscanTxUrl(existing.txHash) : undefined,
+      );
       const result = await pollForAttestation(
         settings,
         safeTxHash,
         payload.chainId,
         payload.safe,
+        (txHash) =>
+          setStatus("loading", "Proposed, waiting for attestation...", gnosisscanTxUrl(txHash)),
       );
       setStatus(
         result.attested ? "passed" : "failed",
@@ -337,18 +352,22 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
       return;
     }
 
-    // No proposal found, submit exactly like the explorer does, via relayer POST.
+    // No proposal found — submit via relayer, then poll.
     log("Safe tx data used for submit:", payload);
     log("Safe tx hash used for submit:", safeTxHash);
     log("Submitting proposal via relayer:", settings.relayerUrl);
     await submitProposal(settings, payload);
     log("Proposal submitted via relayer");
-    setStatus("loading", "Submitted, waiting for attestation...", explorer);
+    // No Gnosis tx hash yet — relayer doesn't return one. The callback below
+    // will add the Gnosisscan link as soon as the first poll sees the log.
+    setStatus("loading", "Submitted, waiting for attestation...");
     const afterSubmit = await pollForAttestation(
       settings,
       safeTxHash,
       payload.chainId,
       payload.safe,
+      (txHash) =>
+        setStatus("loading", "Submitted, waiting for attestation...", gnosisscanTxUrl(txHash)),
     );
     setStatus(
       afterSubmit.attested ? "passed" : "failed",
