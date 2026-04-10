@@ -239,22 +239,22 @@ function setStatus(status: ProposalStatus, message: string, link?: string) {
     }
   } else if (status === "failed") {
     if (iconEl) { iconEl.textContent = "✗"; iconEl.style.color = "#FF5F52"; }
-    if (button) { button.textContent = "Run"; button.disabled = false; button.style.display = ""; button.style.opacity = "1"; button.style.cursor = "pointer"; }
-    const text = document.createElement("span");
-    text.textContent = message;
-    text.style.color = "#FF5F52";
-    statusEl.appendChild(text);
+    if (button) { button.style.display = "none"; }
     if (link) {
       const anchor = document.createElement("a");
       anchor.href = link;
-      anchor.textContent = "View ↗";
-      anchor.style.marginLeft = "6px";
+      anchor.textContent = message + " ↗";
       anchor.target = "_blank";
       anchor.rel = "noreferrer";
-      anchor.style.color = "#12FF80";
+      anchor.style.color = "#FF5F52";
       anchor.style.fontWeight = "600";
       anchor.style.textDecoration = "underline";
       statusEl.appendChild(anchor);
+    } else {
+      const text = document.createElement("span");
+      text.textContent = message;
+      text.style.color = "#FF5F52";
+      statusEl.appendChild(text);
     }
   } else if (status === "warning") {
     if (iconEl) { iconEl.textContent = "!"; iconEl.style.color = "#FFB547"; }
