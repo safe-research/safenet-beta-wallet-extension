@@ -298,7 +298,8 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
   }
   if (mode === "auto") lastAutoRunKey = dedupeKey;
 
-  setStatus("loading", "Checking Safenet Beta...", explorer);
+  // No link yet — we only show the explorer once we have confirmed an on-chain tx.
+  setStatus("loading", "Checking Safenet Beta...");
 
   try {
     log("Looking up existing proposal for", safeTxHash);
@@ -310,28 +311,30 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
     );
     log("Existing proposal:", existing);
     if (existing.txHash) {
-      log(
-        "Gnosis chain tx:",
-        existing.txHash,
-        `https://gnosisscan.io/tx/${existing.txHash}`,
-      );
+      log("Gnosis chain tx:", existing.txHash, gnosisscanTxUrl(existing.txHash));
     }
 
     if (existing.attested) {
-      // Already attested — Safenet explorer is indexed, link there directly.
       setStatus("passed", "Passed", existing.explorerUrl ?? explorer);
       return;
     }
     if (existing.exists) {
-      // Proposed but not yet attested. The Safenet explorer already knows the
-      // tx at this point, so link there. Gnosisscan tx is logged to console.
-      setStatus("loading", "Proposed, waiting for attestation...", explorer);
+      // Proposal is on-chain — show explorer link immediately (txHash confirms it).
+      setStatus(
+        "loading",
+        "Proposed, waiting for attestation...",
+        existing.txHash ? explorer : undefined,
+      );
       const result = await pollForAttestation(
         settings,
         safeTxHash,
         payload.chainId,
         payload.safe,
-        (txHash) => log("Gnosis chain proposal tx:", txHash, gnosisscanTxUrl(txHash)),
+        (txHash) => {
+          log("Gnosis chain proposal tx:", txHash, gnosisscanTxUrl(txHash));
+          // tx is now confirmed on-chain; show explorer link if not shown yet
+          setStatus("loading", "Proposed, waiting for attestation...", explorer);
+        },
       );
       setStatus(
         result.attested ? "passed" : "failed",
@@ -347,15 +350,18 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
     log("Submitting proposal via relayer:", settings.relayerUrl);
     await submitProposal(settings, payload);
     log("Proposal submitted via relayer");
-    // The Safenet explorer will index the tx once the relayer's on-chain call
-    // lands, so link there from the start. Gnosisscan tx is logged to console.
-    setStatus("loading", "Submitted, waiting for attestation...", explorer);
+    // No link yet — relayer doesn't return a tx hash. The callback adds the
+    // explorer link as soon as eth_getLogs sees the TransactionProposed event.
+    setStatus("loading", "Submitted, waiting for attestation...");
     const afterSubmit = await pollForAttestation(
       settings,
       safeTxHash,
       payload.chainId,
       payload.safe,
-      (txHash) => log("Gnosis chain proposal tx:", txHash, gnosisscanTxUrl(txHash)),
+      (txHash) => {
+        log("Gnosis chain proposal tx:", txHash, gnosisscanTxUrl(txHash));
+        setStatus("loading", "Submitted, waiting for attestation...", explorer);
+      },
     );
     setStatus(
       afterSubmit.attested ? "passed" : "failed",
