@@ -1,7 +1,7 @@
 :root {
-  font-family: Inter, system-ui, sans-serif;
-  color: #e5e7eb;
-  background: #111827;
+  font-family: 'DM Sans', Inter, system-ui, sans-serif;
+  color: #ffffff;
+  background: #121312;
 }
 
 body {
@@ -16,32 +16,54 @@ body {
   gap: 12px;
 }
 
+h1 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
 label {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 14px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
 }
 
 input {
-  border: 1px solid #374151;
-  border-radius: 8px;
-  padding: 10px;
-  background: #030712;
-  color: #f9fafb;
+  border: 1px solid rgba(255, 255, 255, 0.23);
+  border-radius: 6px;
+  padding: 9px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+}
+
+input:focus {
+  border-color: rgba(255, 255, 255, 0.5);
 }
 
 button {
-  border: 0;
-  border-radius: 8px;
+  border: none;
+  border-radius: 6px;
   padding: 10px 12px;
-  background: #10b981;
-  color: #04130d;
+  background: #12FF80;
+  color: #121312;
   font-weight: 700;
+  font-size: 14px;
+  font-family: inherit;
   cursor: pointer;
 }
 
-.checkbox-row {
-  flex-direction: row;
-  align-items: center;
+button:hover {
+  background: #00e673;
+}
+
+p {
+  margin: 0;
+  font-size: 13px;
+  color: #12FF80;
 }

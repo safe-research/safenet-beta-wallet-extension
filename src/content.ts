@@ -199,22 +199,16 @@ function setStatus(status: ProposalStatus, message: string, link?: string) {
 
   statusEl.innerHTML = "";
   statusEl.setAttribute("data-status", status);
-  statusEl.style.background =
-    status === "passed"
-      ? "#ecfdf3"
-      : status === "failed"
-        ? "#fff1f2"
-        : status === "unsupported"
-          ? "#fff7e6"
-          : "#f4f5f7";
+  // Keep a fixed subtle background; only the text color changes per status.
+  statusEl.style.background = "rgba(255, 255, 255, 0.05)";
   statusEl.style.color =
     status === "passed"
-      ? "#027a48"
+      ? "#00B460"
       : status === "failed"
-        ? "#b42318"
+        ? "#FF5F52"
         : status === "unsupported"
-          ? "#b54708"
-          : "#3b4248";
+          ? "#FFB547"
+          : "rgba(255, 255, 255, 0.6)";
 
   const text = document.createElement("span");
   text.textContent = message;
@@ -226,7 +220,7 @@ function setStatus(status: ProposalStatus, message: string, link?: string) {
     anchor.textContent = " Open explorer";
     anchor.target = "_blank";
     anchor.rel = "noreferrer";
-    anchor.style.color = "inherit";
+    anchor.style.color = "#12FF80";
     anchor.style.fontWeight = "600";
     anchor.style.textDecoration = "underline";
     statusEl.appendChild(anchor);

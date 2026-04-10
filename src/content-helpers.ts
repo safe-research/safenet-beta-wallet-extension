@@ -261,17 +261,18 @@ export function ensureUi(documentRef: Document) {
     container.id = UI_IDS.container
     container.style.boxSizing = 'border-box'
     container.style.padding = '16px'
-    container.style.background = '#ffffff'
-    container.style.color = '#121312'
-    container.style.border = '1px solid rgba(18, 19, 18, 0.12)'
-    container.style.borderRadius = '16px'
-    container.style.boxShadow = '0 8px 24px rgba(18, 19, 18, 0.08)'
-    container.style.fontFamily = 'Inter, system-ui, sans-serif'
+    container.style.background = '#1C1C1C'
+    container.style.color = '#ffffff'
+    container.style.border = '1px solid rgba(255, 255, 255, 0.12)'
+    container.style.borderRadius = '8px'
+    container.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.5)'
+    container.style.fontFamily = "'DM Sans', Inter, system-ui, sans-serif"
 
     const title = documentRef.createElement('div')
     title.textContent = 'Safenet Beta'
     title.style.fontWeight = '700'
     title.style.fontSize = '16px'
+    title.style.color = '#ffffff'
     title.style.marginBottom = '12px'
 
     const button = documentRef.createElement('button')
@@ -279,12 +280,14 @@ export function ensureUi(documentRef: Document) {
     button.textContent = 'Run check'
     button.style.width = '100%'
     button.style.padding = '10px 12px'
-    button.style.border = '1px solid #121312'
-    button.style.borderRadius = '10px'
+    button.style.border = 'none'
+    button.style.borderRadius = '6px'
     button.style.cursor = 'pointer'
-    button.style.background = '#121312'
-    button.style.color = '#ffffff'
-    button.style.fontWeight = '600'
+    button.style.background = '#12FF80'
+    button.style.color = '#121312'
+    button.style.fontWeight = '700'
+    button.style.fontSize = '14px'
+    button.style.fontFamily = 'inherit'
 
     const status = documentRef.createElement('div')
     status.id = UI_IDS.status
@@ -293,9 +296,9 @@ export function ensureUi(documentRef: Document) {
     status.style.fontSize = '14px'
     status.style.lineHeight = '20px'
     status.style.padding = '10px 12px'
-    status.style.borderRadius = '12px'
-    status.style.background = '#f4f5f7'
-    status.style.color = '#3b4248'
+    status.style.borderRadius = '6px'
+    status.style.background = 'rgba(255, 255, 255, 0.05)'
+    status.style.color = 'rgba(255, 255, 255, 0.6)'
 
     container.append(title, button, status)
   }
