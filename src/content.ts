@@ -242,6 +242,13 @@ function setStatus(status: ProposalStatus, message: string, link?: string) {
       anchor.style.textDecoration = "underline";
       statusEl.appendChild(anchor);
     }
+  } else if (status === "warning") {
+    if (iconEl) { iconEl.textContent = "!"; iconEl.style.color = "#FFB547"; }
+    if (button) { button.textContent = "Run"; button.disabled = false; button.style.display = ""; button.style.opacity = "1"; button.style.cursor = "pointer"; }
+    const text = document.createElement("span");
+    text.textContent = message;
+    text.style.color = "#FFB547";
+    statusEl.appendChild(text);
   } else if (status === "unsupported") {
     if (iconEl) { iconEl.textContent = "!"; iconEl.style.color = "#FFB547"; }
     if (button) { button.style.display = "none"; }
@@ -325,7 +332,7 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
   }
   if (mode === "auto") lastAutoRunKey = dedupeKey;
 
-  setStatus("loading", "Checking...");
+  setStatus("loading", "Polling...");
 
   try {
     log("Looking up existing proposal for", safeTxHash);
@@ -372,7 +379,7 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
     await submitProposal(settings, payload);
     log("Proposal submitted via relayer");
     // No explorer link yet — only added via onFirstTxHash once TransactionProposed is seen.
-    setStatus("loading", "Checking...");
+    setStatus("loading", "Polling...");
     const afterSubmit = await pollForAttestation(
       settings,
       safeTxHash,
@@ -391,7 +398,7 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
       setStatus("failed", "Failed to attest", afterSubmit.explorerUrl ?? explorer);
     } else {
       // Relayer submitted but TransactionProposed never appeared on-chain
-      setStatus("failed", "Failed to submit");
+      setStatus("warning", "Failed to submit");
     }
   } catch (err) {
     logErr("Check failed:", err);
@@ -409,7 +416,6 @@ function scheduleInit(delay = 150) {
 }
 
 async function init() {
-  log("init:", window.location.href);
   void ensurePageBridgeInjected();
   if (!ensurePageUi()) {
     log("Not on Safe review screen, hiding UI");

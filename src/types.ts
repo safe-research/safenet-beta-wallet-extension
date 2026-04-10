@@ -19,7 +19,7 @@ export type SafeTransactionPayload = {
   nonce: bigint
 }
 
-export type ProposalStatus = 'idle' | 'loading' | 'passed' | 'failed' | 'unsupported'
+export type ProposalStatus = 'idle' | 'loading' | 'passed' | 'failed' | 'warning' | 'unsupported'
 
 export type ProposalLookupResult = {
   exists: boolean
