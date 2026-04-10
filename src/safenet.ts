@@ -68,10 +68,8 @@ export function computeSafeTxHash(payload: SafeTransactionPayload): `0x${string}
 }
 
 export function explorerUrl(chainId: bigint, safeTxHash: `0x${string}`) {
-  const url = new URL('https://bafybeifd6bcofwyp7ga2uesp7xqeajlrwigpexyblyni3d3d2n2f4n3txy.ipfs.dweb.link/safeTx')
-  url.searchParams.set('chainId', chainId.toString())
-  url.searchParams.set('safeTxHash', safeTxHash)
-  return url.toString()
+  const params = new URLSearchParams({ chainId: chainId.toString(), safeTxHash })
+  return `https://bafybeifd6bcofwyp7ga2uesp7xqeajlrwigpexyblyni3d3d2n2f4n3txy.ipfs.dweb.link/#/safeTx?${params.toString()}`
 }
 
 export async function lookupProposal(

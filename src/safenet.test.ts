@@ -84,7 +84,7 @@ describe('submitProposal', () => {
 
   it('builds explorer links for a safe tx hash', () => {
     expect(explorerUrl(1n, ('0x' + '1'.repeat(64)) as `0x${string}`)).toBe(
-      'https://bafybeifd6bcofwyp7ga2uesp7xqeajlrwigpexyblyni3d3d2n2f4n3txy.ipfs.dweb.link/safeTx?chainId=1&safeTxHash=0x1111111111111111111111111111111111111111111111111111111111111111',
+      'https://bafybeifd6bcofwyp7ga2uesp7xqeajlrwigpexyblyni3d3d2n2f4n3txy.ipfs.dweb.link/#/safeTx?chainId=1&safeTxHash=0x1111111111111111111111111111111111111111111111111111111111111111',
     )
   })
 })
