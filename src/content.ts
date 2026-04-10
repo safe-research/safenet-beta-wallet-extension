@@ -287,12 +287,10 @@ async function pollForAttestation(
     log(txHashReported ? "Polling for attestation..." : "Polling for proposal...");
     last = await lookupProposal(settings, safeTxHash, chainId, safe);
     log("Lookup result:", last);
-    if (last.txHash) {
+    if (last.txHash && !txHashReported) {
+      txHashReported = true;
       log("Gnosis chain tx:", last.txHash, gnosisscanTxUrl(last.txHash));
-      if (!txHashReported) {
-        txHashReported = true;
-        onFirstTxHash?.(last.txHash);
-      }
+      onFirstTxHash?.(last.txHash);
     }
     if (last.attested) return last;
   }
@@ -362,7 +360,7 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
         payload.chainId,
         payload.safe,
         (txHash) => {
-          log("Gnosis chain proposal tx:", txHash, gnosisscanTxUrl(txHash));
+          void txHash;
           setStatus("loading", "Submitted", explorer);
         },
       );
@@ -388,8 +386,7 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
       payload.chainId,
       payload.safe,
       (txHash) => {
-        log("Gnosis chain proposal tx:", txHash, gnosisscanTxUrl(txHash));
-        // TransactionProposed confirmed on-chain — update to "Submitted" with explorer link.
+        void txHash;
         setStatus("loading", "Submitted", explorer);
       },
     );
