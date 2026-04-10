@@ -284,7 +284,7 @@ async function pollForAttestation(
   let txHashReported = false;
   while (Date.now() < deadline) {
     await new Promise<void>((r) => setTimeout(r, interval));
-    log("Polling for attestation...");
+    log(txHashReported ? "Polling for attestation..." : "Polling for proposal...");
     last = await lookupProposal(settings, safeTxHash, chainId, safe);
     log("Lookup result:", last);
     if (last.txHash) {
