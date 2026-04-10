@@ -69,7 +69,7 @@ export function computeSafeTxHash(payload: SafeTransactionPayload): `0x${string}
 
 export function explorerUrl(chainId: bigint, safeTxHash: `0x${string}`) {
   const params = new URLSearchParams({ chainId: chainId.toString(), safeTxHash })
-  return `https://bafybeifd6bcofwyp7ga2uesp7xqeajlrwigpexyblyni3d3d2n2f4n3txy.ipfs.dweb.link/#/safeTx?${params.toString()}`
+  return `https://explorer.safenet-beta.eth.limo/#/safeTx?${params.toString()}`
 }
 
 export async function lookupProposal(

@@ -133,8 +133,9 @@ describe('ensureUi', () => {
 
     expect(first).toBe(second)
     expect(document.querySelectorAll(`#${UI_IDS.container}`)).toHaveLength(1)
-    expect(document.getElementById(UI_IDS.button)?.textContent).toBe('Run check')
-    expect(document.getElementById(UI_IDS.status)?.textContent).toBe('Idle')
+    expect(document.getElementById(UI_IDS.button)?.textContent).toBe('Run')
+    expect(document.getElementById(UI_IDS.icon)?.textContent).toBe('↻')
+    expect(document.getElementById(UI_IDS.status)?.textContent).toBe('')
   })
 
   it('mounts the UI directly below the Safe Shield widget when present', () => {

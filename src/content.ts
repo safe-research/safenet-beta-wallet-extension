@@ -191,42 +191,69 @@ function ensurePageUi() {
 function setStatus(status: ProposalStatus, message: string, link?: string) {
   log(`Status: ${status} — ${message}${link ? ` (${link})` : ""}`);
   ensurePageUi();
+  const iconEl = document.getElementById(UI_IDS.icon);
   const statusEl = document.getElementById(UI_IDS.status);
-  const button = document.getElementById(
-    UI_IDS.button,
-  ) as HTMLButtonElement | null;
+  const button = document.getElementById(UI_IDS.button) as HTMLButtonElement | null;
   if (!statusEl) return;
 
   statusEl.innerHTML = "";
   statusEl.setAttribute("data-status", status);
-  // Keep a fixed subtle background; only the text color changes per status.
-  statusEl.style.background = "rgba(255, 255, 255, 0.05)";
-  statusEl.style.color =
-    status === "passed"
-      ? "#00B460"
-      : status === "failed"
-        ? "#FF5F52"
-        : status === "unsupported"
-          ? "#FFB547"
-          : "rgba(255, 255, 255, 0.6)";
 
-  const text = document.createElement("span");
-  text.textContent = message;
-  statusEl.appendChild(text);
-
-  if (link) {
-    const anchor = document.createElement("a");
-    anchor.href = link;
-    anchor.textContent = " Open explorer";
-    anchor.target = "_blank";
-    anchor.rel = "noreferrer";
-    anchor.style.color = "#12FF80";
-    anchor.style.fontWeight = "600";
-    anchor.style.textDecoration = "underline";
-    statusEl.appendChild(anchor);
+  if (status === "loading") {
+    if (iconEl) { iconEl.textContent = "↻"; iconEl.style.color = "rgba(255, 255, 255, 0.6)"; }
+    if (button) { button.textContent = "Running..."; button.disabled = true; button.style.display = ""; button.style.opacity = "0.5"; button.style.cursor = "not-allowed"; }
+    const text = document.createElement("span");
+    text.textContent = message;
+    text.style.color = "rgba(255, 255, 255, 0.6)";
+    statusEl.appendChild(text);
+  } else if (status === "passed") {
+    if (iconEl) { iconEl.textContent = "✓"; iconEl.style.color = "#00B460"; }
+    if (button) { button.style.display = "none"; }
+    const text = document.createElement("span");
+    text.textContent = message;
+    text.style.color = "#00B460";
+    statusEl.appendChild(text);
+    if (link) {
+      const anchor = document.createElement("a");
+      anchor.href = link;
+      anchor.textContent = " View ↗";
+      anchor.target = "_blank";
+      anchor.rel = "noreferrer";
+      anchor.style.color = "#12FF80";
+      anchor.style.fontWeight = "600";
+      anchor.style.textDecoration = "underline";
+      statusEl.appendChild(anchor);
+    }
+  } else if (status === "failed") {
+    if (iconEl) { iconEl.textContent = "✗"; iconEl.style.color = "#FF5F52"; }
+    if (button) { button.textContent = "Run"; button.disabled = false; button.style.display = ""; button.style.opacity = "1"; button.style.cursor = "pointer"; }
+    const text = document.createElement("span");
+    text.textContent = message;
+    text.style.color = "#FF5F52";
+    statusEl.appendChild(text);
+    if (link) {
+      const anchor = document.createElement("a");
+      anchor.href = link;
+      anchor.textContent = " View ↗";
+      anchor.target = "_blank";
+      anchor.rel = "noreferrer";
+      anchor.style.color = "#12FF80";
+      anchor.style.fontWeight = "600";
+      anchor.style.textDecoration = "underline";
+      statusEl.appendChild(anchor);
+    }
+  } else if (status === "unsupported") {
+    if (iconEl) { iconEl.textContent = "!"; iconEl.style.color = "#FFB547"; }
+    if (button) { button.style.display = "none"; }
+    const text = document.createElement("span");
+    text.textContent = message;
+    text.style.color = "#FFB547";
+    statusEl.appendChild(text);
+  } else {
+    // idle
+    if (iconEl) { iconEl.textContent = "↻"; iconEl.style.color = "rgba(255, 255, 255, 0.6)"; }
+    if (button) { button.textContent = "Run"; button.disabled = false; button.style.display = ""; button.style.opacity = "1"; button.style.cursor = "pointer"; }
   }
-
-  if (button) button.disabled = status === "loading";
 }
 
 function gnosisscanTxUrl(txHash: `0x${string}`) {
@@ -298,8 +325,7 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
   }
   if (mode === "auto") lastAutoRunKey = dedupeKey;
 
-  // No link yet — we only show the explorer once we have confirmed an on-chain tx.
-  setStatus("loading", "Checking Safenet Beta...");
+  setStatus("loading", "Checking...");
 
   try {
     log("Looking up existing proposal for", safeTxHash);
@@ -315,16 +341,12 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
     }
 
     if (existing.attested) {
-      setStatus("passed", "Passed", existing.explorerUrl ?? explorer);
+      setStatus("passed", "Attested", existing.explorerUrl ?? explorer);
       return;
     }
     if (existing.exists) {
-      // Proposal is on-chain — show explorer link immediately (txHash confirms it).
-      setStatus(
-        "loading",
-        "Proposed, waiting for attestation...",
-        existing.txHash ? explorer : undefined,
-      );
+      // TransactionProposed already on-chain — show "Submitted" with explorer link.
+      setStatus("loading", "Submitted", existing.txHash ? explorer : undefined);
       const result = await pollForAttestation(
         settings,
         safeTxHash,
@@ -332,15 +354,14 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
         payload.safe,
         (txHash) => {
           log("Gnosis chain proposal tx:", txHash, gnosisscanTxUrl(txHash));
-          // tx is now confirmed on-chain; show explorer link if not shown yet
-          setStatus("loading", "Proposed, waiting for attestation...", explorer);
+          setStatus("loading", "Submitted", explorer);
         },
       );
-      setStatus(
-        result.attested ? "passed" : "failed",
-        result.attested ? "Passed" : "failed check",
-        result.explorerUrl ?? explorer,
-      );
+      if (result.attested) {
+        setStatus("passed", "Attested", result.explorerUrl ?? explorer);
+      } else {
+        setStatus("failed", "Failed to attest", result.explorerUrl ?? explorer);
+      }
       return;
     }
 
@@ -350,9 +371,8 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
     log("Submitting proposal via relayer:", settings.relayerUrl);
     await submitProposal(settings, payload);
     log("Proposal submitted via relayer");
-    // No link yet — relayer doesn't return a tx hash. The callback adds the
-    // explorer link as soon as eth_getLogs sees the TransactionProposed event.
-    setStatus("loading", "Submitted, waiting for attestation...");
+    // No explorer link yet — only added via onFirstTxHash once TransactionProposed is seen.
+    setStatus("loading", "Checking...");
     const afterSubmit = await pollForAttestation(
       settings,
       safeTxHash,
@@ -360,14 +380,19 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
       payload.safe,
       (txHash) => {
         log("Gnosis chain proposal tx:", txHash, gnosisscanTxUrl(txHash));
-        setStatus("loading", "Submitted, waiting for attestation...", explorer);
+        // TransactionProposed confirmed on-chain — update to "Submitted" with explorer link.
+        setStatus("loading", "Submitted", explorer);
       },
     );
-    setStatus(
-      afterSubmit.attested ? "passed" : "failed",
-      afterSubmit.attested ? "Passed" : "failed check",
-      afterSubmit.explorerUrl ?? explorer,
-    );
+    if (afterSubmit.attested) {
+      setStatus("passed", "Attested", afterSubmit.explorerUrl ?? explorer);
+    } else if (afterSubmit.txHash) {
+      // TransactionProposed was seen on-chain, but attestation timed out
+      setStatus("failed", "Failed to attest", afterSubmit.explorerUrl ?? explorer);
+    } else {
+      // Relayer submitted but TransactionProposed never appeared on-chain
+      setStatus("failed", "Failed to submit");
+    }
   } catch (err) {
     logErr("Check failed:", err);
     setStatus("failed", "Check error - see console");
@@ -384,7 +409,7 @@ function scheduleInit(delay = 150) {
 }
 
 async function init() {
-  log("Initialising on", window.location.href);
+  log("init:", window.location.href);
   void ensurePageBridgeInjected();
   if (!ensurePageUi()) {
     log("Not on Safe review screen, hiding UI");
@@ -405,8 +430,14 @@ setInterval(() => {
   }
 }, 1000);
 
-const observer = new MutationObserver(() => {
-  if (isReviewScreen(document) || document.getElementById(UI_IDS.container)) {
+const observer = new MutationObserver((mutations) => {
+  const container = document.getElementById(UI_IDS.container);
+  // Ignore mutations that originate from within our own UI to avoid log spam
+  // while setStatus updates the DOM during polling.
+  if (container && mutations.every((m) => container.contains(m.target as Node))) {
+    return;
+  }
+  if (isReviewScreen(document) || container) {
     scheduleInit();
   }
 });

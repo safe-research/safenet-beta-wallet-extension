@@ -260,7 +260,10 @@ export function ensureUi(documentRef: Document) {
     container = documentRef.createElement('div')
     container.id = UI_IDS.container
     container.style.boxSizing = 'border-box'
-    container.style.padding = '16px'
+    container.style.display = 'flex'
+    container.style.alignItems = 'center'
+    container.style.gap = '10px'
+    container.style.padding = '10px 16px'
     container.style.background = '#1C1C1C'
     container.style.color = '#ffffff'
     container.style.border = '1px solid rgba(255, 255, 255, 0.12)'
@@ -268,39 +271,41 @@ export function ensureUi(documentRef: Document) {
     container.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.5)'
     container.style.fontFamily = "'DM Sans', Inter, system-ui, sans-serif"
 
-    const title = documentRef.createElement('div')
-    title.textContent = 'Safenet Beta'
-    title.style.fontWeight = '700'
-    title.style.fontSize = '16px'
-    title.style.color = '#ffffff'
-    title.style.marginBottom = '12px'
+    const icon = documentRef.createElement('span')
+    icon.id = UI_IDS.icon
+    icon.textContent = '↻'
+    icon.style.fontSize = '16px'
+    icon.style.lineHeight = '1'
+    icon.style.color = 'rgba(255, 255, 255, 0.6)'
+    icon.style.flexShrink = '0'
+
+    const label = documentRef.createElement('span')
+    label.textContent = 'Safenet Beta'
+    label.style.fontWeight = '700'
+    label.style.fontSize = '14px'
+    label.style.color = '#ffffff'
+    label.style.flex = '1'
+
+    const status = documentRef.createElement('span')
+    status.id = UI_IDS.status
+    status.style.fontSize = '13px'
+    status.style.color = 'rgba(255, 255, 255, 0.6)'
 
     const button = documentRef.createElement('button')
     button.id = UI_IDS.button
-    button.textContent = 'Run check'
-    button.style.width = '100%'
-    button.style.padding = '10px 12px'
-    button.style.border = 'none'
-    button.style.borderRadius = '6px'
+    button.textContent = 'Run'
+    button.style.flexShrink = '0'
+    button.style.padding = '4px 10px'
+    button.style.border = '1px solid rgba(255, 255, 255, 0.4)'
+    button.style.borderRadius = '4px'
     button.style.cursor = 'pointer'
-    button.style.background = '#12FF80'
-    button.style.color = '#121312'
-    button.style.fontWeight = '700'
-    button.style.fontSize = '14px'
+    button.style.background = 'transparent'
+    button.style.color = '#ffffff'
+    button.style.fontWeight = '600'
+    button.style.fontSize = '13px'
     button.style.fontFamily = 'inherit'
 
-    const status = documentRef.createElement('div')
-    status.id = UI_IDS.status
-    status.textContent = 'Idle'
-    status.style.marginTop = '12px'
-    status.style.fontSize = '14px'
-    status.style.lineHeight = '20px'
-    status.style.padding = '10px 12px'
-    status.style.borderRadius = '6px'
-    status.style.background = 'rgba(255, 255, 255, 0.05)'
-    status.style.color = 'rgba(255, 255, 255, 0.6)'
-
-    container.append(title, button, status)
+    container.append(icon, label, status, button)
   }
 
   mountUi(container, documentRef)

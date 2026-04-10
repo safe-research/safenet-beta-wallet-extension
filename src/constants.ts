@@ -15,6 +15,7 @@ export const SAFE_APP_MATCH = /^https:\/\/(app\.)?safe\.global\//
 
 export const UI_IDS = {
   container: 'safenet-beta-check-container',
+  icon: 'safenet-beta-check-icon',
   button: 'safenet-beta-check-button',
   status: 'safenet-beta-check-status',
 } as const

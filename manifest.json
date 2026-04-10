@@ -7,7 +7,7 @@
   "host_permissions": [
     "https://app.safe.global/*",
     "https://safe.global/*",
-    "https://bafybeifd6bcofwyp7ga2uesp7xqeajlrwigpexyblyni3d3d2n2f4n3txy.ipfs.dweb.link/*",
+    "https://explorer.safenet-beta.eth.limo/*",
     "<all_urls>"
   ],
   "background": {
