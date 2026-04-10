@@ -327,9 +327,16 @@ async function runCheck(mode: "manual" | "auto" = "manual") {
     log("Safe tx data used for submit:", payload);
     log("Safe tx hash used for submit:", safeTxHash);
     log("Submitting proposal via relayer:", settings.relayerUrl);
-    await submitProposal(settings, payload);
-    log("Proposal submitted via relayer");
-    setStatus("loading", "Submitted, waiting for attestation...", explorer);
+    const relayerTxHash = await submitProposal(settings, payload);
+    const gnosisScanUrl = relayerTxHash
+      ? `https://gnosisscan.io/tx/${relayerTxHash}`
+      : undefined;
+    if (relayerTxHash) {
+      log("Proposal submitted. Gnosis chain tx:", relayerTxHash, gnosisScanUrl);
+    } else {
+      log("Proposal submitted via relayer (no tx hash in response)");
+    }
+    setStatus("loading", "Submitted, waiting for attestation...", gnosisScanUrl ?? explorer);
     const afterSubmit = await pollForAttestation(
       settings,
       safeTxHash,

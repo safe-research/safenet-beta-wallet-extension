@@ -164,7 +164,11 @@ export async function loadSafeTransactionFromService(chainId: bigint, safeTxHash
   } satisfies SafeTransactionPayload
 }
 
-export async function submitProposal(settings: ExtensionSettings, payload: SafeTransactionPayload) {
+/**
+ * Submits a proposal to the relayer and returns the Gnosis Chain tx hash if
+ * the relayer includes one in its response body (field: txHash or hash).
+ */
+export async function submitProposal(settings: ExtensionSettings, payload: SafeTransactionPayload): Promise<`0x${string}` | undefined> {
   if (!isAddress(settings.consensus)) throw new Error('Invalid consensus address')
   const response = await fetch(settings.relayerUrl, {
     method: 'POST',
@@ -186,4 +190,13 @@ export async function submitProposal(settings: ExtensionSettings, payload: SafeT
   })
 
   if (!response.ok) throw new Error('Proposal submission failed')
+
+  try {
+    const json = await response.json() as Record<string, unknown>
+    const hash = json?.txHash ?? json?.hash ?? json?.transactionHash
+    if (typeof hash === 'string' && hash.startsWith('0x')) return hash as `0x${string}`
+  } catch {
+    // response body not JSON or no tx hash field — not a hard error
+  }
+  return undefined
 }
