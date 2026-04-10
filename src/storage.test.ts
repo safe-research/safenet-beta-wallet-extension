@@ -15,9 +15,8 @@ vi.mock('webextension-polyfill', () => ({
 }))
 
 const VALID_SETTINGS = {
-  autoRun: false,
   rpc: 'https://rpc.safenet-beta.eth.limo',
-  relayerUrl: 'https://explorer.safenet-beta.eth.limo/api/proposals',
+  relayerUrl: 'https://relayer.safenet-beta.eth.limo/api/proposals',
   consensus: '0x223624cBF099e5a8f8cD5aF22aFa424a1d1acEE9',
 }
 
@@ -28,10 +27,11 @@ describe('storage helpers', () => {
   })
 
   it('merges defaults with stored settings', async () => {
-    getMock.mockResolvedValue({ 'safenet-beta-settings': { ...VALID_SETTINGS, autoRun: true } })
+    const customRpc = 'https://custom.rpc.example.com'
+    getMock.mockResolvedValue({ 'safenet-beta-settings': { ...VALID_SETTINGS, rpc: customRpc } })
     const { getSettings } = await import('./storage')
     const settings = await getSettings()
-    expect(settings.autoRun).toBe(true)
+    expect(settings.rpc).toBe(customRpc)
   })
 
   it('returns defaults when storage is empty', async () => {
@@ -40,7 +40,7 @@ describe('storage helpers', () => {
     const { DEFAULT_SETTINGS } = await import('./constants')
     const settings = await getSettings()
     expect(settings.consensus).toBe(DEFAULT_SETTINGS.consensus)
-    expect(settings.autoRun).toBe(false)
+    expect(settings.rpc).toBe(DEFAULT_SETTINGS.rpc)
   })
 
   it('validates on save', async () => {

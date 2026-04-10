@@ -367,14 +367,6 @@ async function init() {
   // Use onclick assignment instead of addEventListener to avoid accumulating
   // duplicate handlers across SPA navigations when the UI element persists.
   if (button) button.onclick = () => void runCheck("manual");
-
-  const settings = await getSettings();
-  if (settings.autoRun) {
-    void (async () => {
-      const resolved = await waitForTransaction();
-      if (resolved) void runCheck("auto");
-    })();
-  }
 }
 
 let lastHref = window.location.href;

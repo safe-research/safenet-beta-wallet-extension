@@ -6,7 +6,7 @@ import { settingsSchema } from './schema'
 describe('settings schema', () => {
   it('accepts default settings', () => {
     const parsed = settingsSchema.parse(DEFAULT_SETTINGS)
-    expect(parsed.autoRun).toBe(false)
+    expect(parsed.consensus).toBe(DEFAULT_SETTINGS.consensus)
   })
 })
 

@@ -24,7 +24,6 @@ export const settingsSchema = z.object({
   consensus: addressString,
   rpc: z.url(),
   relayerUrl: z.url(),
-  autoRun: z.boolean(),
 })
 
 export const safeTransactionSchema = z.object({

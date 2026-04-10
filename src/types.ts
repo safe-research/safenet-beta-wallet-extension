@@ -2,7 +2,6 @@ export type ExtensionSettings = {
   consensus: string
   rpc: string
   relayerUrl: string
-  autoRun: boolean
 }
 
 export type SafeTransactionPayload = {

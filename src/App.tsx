@@ -33,15 +33,7 @@ function App() {
         <span>Relayer URL</span>
         <input value={settings.relayerUrl} onChange={(e) => setLocalSettings({ ...settings, relayerUrl: e.target.value })} />
       </label>
-      <label className="checkbox-row">
-        <input
-          type="checkbox"
-          checked={settings.autoRun}
-          onChange={(e) => setLocalSettings({ ...settings, autoRun: e.target.checked })}
-        />
-        <span>Auto-run once transaction details are available</span>
-      </label>
-      <button onClick={() => void save()}>Save</button>
+<button onClick={() => void save()}>Save</button>
       {saved && <p>Saved</p>}
     </main>
   )

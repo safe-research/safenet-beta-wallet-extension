@@ -1,5 +1,7 @@
 # Safenet Beta Wallet Extension
 
+> **Warning: This is a prototype. Code has not been audited. Use at your own risk.**
+
 Browser extension that adds a Safenet Beta check to Safe Wallet transaction flows.
 
 ## Download

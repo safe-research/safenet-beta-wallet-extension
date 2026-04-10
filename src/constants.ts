@@ -4,7 +4,6 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   consensus: '0x223624cBF099e5a8f8cD5aF22aFa424a1d1acEE9',
   rpc: 'https://gnosis.gateway.tenderly.co',
   relayerUrl: 'https://safenet-proxy.cc0x.workers.dev/tx',
-  autoRun: false,
 }
 
 // Deployment block of the consensus contract on Gnosis Chain (block 45210396).
