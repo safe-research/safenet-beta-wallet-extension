@@ -206,6 +206,18 @@ function setStatus(status: ProposalStatus, message: string, link?: string) {
     text.textContent = message;
     text.style.color = "rgba(255, 255, 255, 0.6)";
     statusEl.appendChild(text);
+    if (link) {
+      const anchor = document.createElement("a");
+      anchor.href = link;
+      anchor.textContent = "View ↗";
+      anchor.style.marginLeft = "6px";
+      anchor.target = "_blank";
+      anchor.rel = "noreferrer";
+      anchor.style.color = "#12FF80";
+      anchor.style.fontWeight = "600";
+      anchor.style.textDecoration = "underline";
+      statusEl.appendChild(anchor);
+    }
   } else if (status === "passed") {
     if (iconEl) { iconEl.textContent = "✓"; iconEl.style.color = "#00B460"; }
     if (button) { button.style.display = "none"; }
