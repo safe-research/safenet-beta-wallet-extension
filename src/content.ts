@@ -216,7 +216,8 @@ function setStatus(status: ProposalStatus, message: string, link?: string) {
     if (link) {
       const anchor = document.createElement("a");
       anchor.href = link;
-      anchor.textContent = " View ↗";
+      anchor.textContent = "View ↗";
+      anchor.style.marginLeft = "6px";
       anchor.target = "_blank";
       anchor.rel = "noreferrer";
       anchor.style.color = "#12FF80";
@@ -234,7 +235,8 @@ function setStatus(status: ProposalStatus, message: string, link?: string) {
     if (link) {
       const anchor = document.createElement("a");
       anchor.href = link;
-      anchor.textContent = " View ↗";
+      anchor.textContent = "View ↗";
+      anchor.style.marginLeft = "6px";
       anchor.target = "_blank";
       anchor.rel = "noreferrer";
       anchor.style.color = "#12FF80";
