@@ -240,7 +240,7 @@ async function pollForAttestation(
   safeTxHash: `0x${string}`,
   chainId: bigint,
   safe: `0x${string}`,
-  maxWait = 15000,
+  maxWait = 60000,
   interval = 4000,
 ): Promise<ProposalLookupResult> {
   const deadline = Date.now() + maxWait;

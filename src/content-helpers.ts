@@ -201,27 +201,13 @@ export function getDraftTransactionFromPage(
 }
 
 export function isReviewScreen(documentRef: Document): boolean {
-  if (documentRef.querySelector('[data-testid="safe-shield-widget"]')) {
-    return true
-  }
-
-  if (documentRef.querySelector(REVIEW_ACTION_SELECTORS.join(', '))) {
-    return true
-  }
-
-  if (
-    Array.from(documentRef.querySelectorAll('[role="dialog"], section, article, div')).some((element) => {
-      const text = element.textContent?.toLowerCase() ?? ''
-      return text.includes('confirm transaction') || text.includes('safe shield')
-    })
-  ) {
-    return true
-  }
-
-  return Array.from(documentRef.querySelectorAll('button')).some((button) => {
-    const text = button.textContent?.trim().toLowerCase() ?? ''
-    return text === 'continue' || text === 'sign' || text === 'execute'
-  })
+  // Use data-testid selectors only — they are specific to the review/signing
+  // step and won't match the new-transaction creation form, which also has a
+  // generic "Continue" button that caused false positives.
+  return (
+    documentRef.querySelector('[data-testid="safe-shield-widget"]') !== null ||
+    documentRef.querySelector(REVIEW_ACTION_SELECTORS.join(', ')) !== null
+  )
 }
 
 function getUiAnchor(documentRef: Document): Element | null {
