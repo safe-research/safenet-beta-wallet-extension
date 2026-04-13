@@ -133,11 +133,11 @@ Maps the chain prefix from the `safe` query parameter to an EVM chain ID (return
 
 ### `getDraftTransactionFromPage` (1 test)
 
-Scrapes an in-progress (not yet submitted) Safe transaction from the React component tree. The extension digs into the browser's internal React state to extract transaction form data: it searches for known Safe transaction fields in the component tree anchored on recognizable UI elements.
+Simulates a Safe Wallet review page with transaction data embedded in the browser's React state, and verifies the extension correctly extracts and normalizes all transaction fields.
 
-- Attaches a synthetic `__reactFiber$test` property to a DOM button, then verifies that the function returns the correct `SafeTransactionPayload` with all numeric fields (`value`, `safeTxGas`, `baseGas`, `gasPrice`, `nonce`) converted to `BigInt`, `chainId` and `safe` resolved from the URL, and all address/data fields preserved as-is.
+- Verifies that the function returns the correct `SafeTransactionPayload` with all numeric fields (`value`, `safeTxGas`, `baseGas`, `gasPrice`, `nonce`) converted to `BigInt`, `chainId` and `safe` resolved from the URL, and all address/data fields preserved as-is.
 
-**Not covered / manual QA:** Pages where the React fiber key suffix differs (varies by React version); components where `safeTx` lives deeper in the tree; the fallback path when React fiber scraping fails and the extension falls back to the Transaction Service API.
+**Not covered / manual QA:** The extension reads transaction data from Safe Wallet's internal page state. If Safe Wallet updates its UI framework, the extension may stop reading data correctly — verify on the real Safe Wallet UI after Safe Wallet updates.
 
 ---
 
