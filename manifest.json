@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "Safenet Beta Wallet Extension",
+  "version": "0.1.0",
+  "description": "Adds a Safenet Beta check to Safe Wallet transaction flows.",
+  "permissions": ["storage", "tabs", "scripting"],
+  "host_permissions": [
+    "https://app.safe.global/*",
+    "https://safe.global/*",
+    "https://explorer.safenet-beta.eth.limo/*",
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "dist/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Safenet Beta",
+    "default_popup": "dist/popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://app.safe.global/*",
+        "https://safe.global/*"
+      ],
+      "js": ["dist/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["dist/assets/*", "page-bridge.js"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "safenet-beta-wallet-extension@safefoundation.org"
+    }
+  }
+}

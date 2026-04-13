@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  pull_request:
+
+jobs:
+  lint-test-build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --include=dev
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+        env:
+          GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Upload extension artifact
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: safenet-beta-extension-${{ github.sha }}
+          path: dist/
+          retention-days: 14
+
+      - name: Comment on PR with download link
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- safenet-beta-extension-build -->'
+            const sha = (context.payload.pull_request?.head?.sha ?? context.sha).slice(0, 7)
+            const artifactUrl = '${{ steps.upload.outputs.artifact-url }}'
+            const body = `${marker}
+            ### Extension build ready (\`${sha}\`)
+
+            **[Download extension zip](${artifactUrl})**
+
+            **Install in Chrome / Brave**
+            1. Extract the zip
+            2. Open \`chrome://extensions\` or \`brave://extensions\`
+            3. Enable Developer Mode
+            4. Load unpacked → select the extracted folder (it contains \`manifest.json\`)
+
+            **Install in Firefox**
+            1. Extract the zip
+            2. Open \`about:debugging\` → This Firefox
+            3. Load Temporary Add-on → select \`manifest.json\` from the extracted folder`
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            })
+
+            const existing = comments.find(c => c.body.includes(marker))
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              })
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              })
+            }
