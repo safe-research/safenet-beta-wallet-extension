@@ -1,5 +1,7 @@
 # Test Case Reference
 
+**37 automated tests across 3 files:** [`src/safenet.test.ts`](../src/safenet.test.ts) (18 tests), [`src/content-helpers.test.ts`](../src/content-helpers.test.ts) (14 tests), [`src/storage.test.ts`](../src/storage.test.ts) (5 tests). The automated suite covers core transaction hashing, relayer calls, on-chain lookups, URL/DOM parsing, and settings persistence. End-to-end browser behaviour and interactions with the live Safe Wallet UI require manual QA - see the "Not covered / manual QA" notes throughout.
+
 This document covers all automated test cases in the project. It is intended for:
 - **QA engineers** who want to understand what is already covered and what requires manual verification
 - **Developers** who want a quick orientation to each module's behaviour and edge cases
@@ -39,9 +41,9 @@ Produces an EIP-712 typed-data hash for a Safe transaction. The hash is used as 
 
 ### `submitProposal` (1 test)
 
-POSTs a Safe transaction payload to the Safenet relayer endpoint.
+Verifies the extension calls the relayer with the correct payload when proposing a transaction.
 
-- Sends a `POST` request to the configured `relayerUrl` with `Content-Type: application/json`.
+- Confirms the extension sends the transaction to the configured `relayerUrl` with the right HTTP method and content type, ensuring the relayer receives exactly what it needs to process the proposal.
 
 **Not covered / manual QA:** Relayer error responses (4xx/5xx); network failures; serialisation of BigInt fields in the JSON body.
 
@@ -125,13 +127,13 @@ Maps the chain prefix from the `safe` query parameter to an EVM chain ID (return
 - Known prefixes map correctly: `eth` -> `1n`, `gno` -> `100n`, `base` -> `8453n`.
 - Unknown or missing prefixes fall back to Sepolia (`11155111n`).
 
-**Not covered / manual QA:** All other chains supported by Safe Wallet (e.g., `arb`, `matic`, `bnb`). These will silently fall back to Sepolia rather than failing, which may cause incorrect hash calculations for unsupported networks.
+**Not covered / manual QA:** All other chains supported by Safe Wallet (e.g., `arb`, `matic`, `bnb`). On an unsupported chain, the extension will silently compute the wrong transaction hash (this is known behavior). QA should verify the extension is only used on supported chains (Ethereum mainnet, Gnosis Chain, Base, Sepolia).
 
 ---
 
 ### `getDraftTransactionFromPage` (1 test)
 
-Scrapes an in-progress (not yet submitted) Safe transaction from the React component tree. The extension walks up the `__reactFiber$...` linked list from the sign/continue button element to find a parent component holding `memoizedProps.safeTx.data`.
+Scrapes an in-progress (not yet submitted) Safe transaction from the React component tree. The extension digs into the browser's internal React state to extract transaction form data: it searches for known Safe transaction fields in the component tree anchored on recognizable UI elements.
 
 - Attaches a synthetic `__reactFiber$test` property to a DOM button, then verifies that the function returns the correct `SafeTransactionPayload` with all numeric fields (`value`, `safeTxGas`, `baseGas`, `gasPrice`, `nonce`) converted to `BigInt`, `chainId` and `safe` resolved from the URL, and all address/data fields preserved as-is.
 
@@ -143,7 +145,7 @@ Scrapes an in-progress (not yet submitted) Safe transaction from the React compo
 
 Determines whether the DOM currently shows the Safe transaction review/sign step (as opposed to the new-transaction form or any other page). The extension only activates on this screen.
 
-- Returns `true` when the `[data-testid="continue-sign-btn"]` or `[data-testid="sign-btn"]` element is present.
+- Returns `true` when the `[data-testid="continue-sign-btn"]` or `[data-testid="sign-btn"]` element is present (`data-testid` are HTML markers Safe Wallet uses to identify its UI elements).
 - Returns `false` when only `[data-testid="safe-shield-widget"]` is present. This element also appears on the new-transaction form, so its presence alone is not sufficient to identify the review screen.
 - Returns `false` when neither element is present.
 
