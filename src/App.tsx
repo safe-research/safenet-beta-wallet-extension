@@ -1,40 +1,49 @@
 import { useEffect, useState } from 'react'
 import './App.css'
-import { DEFAULT_SETTINGS } from './constants'
+import NetworkSettingsForm from './NetworkSettingsForm'
+import { BETA_NETWORK, Q3_NETWORK } from './constants'
 import { getSettings, setSettings } from './storage'
-import type { ExtensionSettings } from './types'
+import type { ExtensionSettings, NetworkId } from './types'
 
 function App() {
-  const [settings, setLocalSettings] = useState<ExtensionSettings>(DEFAULT_SETTINGS)
-  const [saved, setSaved] = useState(false)
+  const [settings, setLocalSettings] = useState<Record<NetworkId, ExtensionSettings>>({
+    beta: BETA_NETWORK.defaultSettings,
+    q3: Q3_NETWORK.defaultSettings,
+  })
+  const [saved, setSaved] = useState<Record<NetworkId, boolean>>({ beta: false, q3: false })
 
   useEffect(() => {
-    void getSettings().then(setLocalSettings)
+    void Promise.all([getSettings('beta'), getSettings('q3')]).then(([beta, q3]) => {
+      setLocalSettings({ beta, q3 })
+    })
   }, [])
 
-  async function save() {
-    await setSettings(settings)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 1500)
+  async function save(networkId: NetworkId) {
+    await setSettings(settings[networkId], networkId)
+    setSaved((prev) => ({ ...prev, [networkId]: true }))
+    setTimeout(() => setSaved((prev) => ({ ...prev, [networkId]: false })), 1500)
   }
 
   return (
     <main className="popup-root">
-      <h1>Safenet Beta</h1>
-      <label>
-        <span>Consensus contract</span>
-        <input value={settings.consensus} onChange={(e) => setLocalSettings({ ...settings, consensus: e.target.value })} />
-      </label>
-      <label>
-        <span>RPC endpoint</span>
-        <input value={settings.rpc} onChange={(e) => setLocalSettings({ ...settings, rpc: e.target.value })} />
-      </label>
-      <label>
-        <span>Relayer URL</span>
-        <input value={settings.relayerUrl} onChange={(e) => setLocalSettings({ ...settings, relayerUrl: e.target.value })} />
-      </label>
-<button onClick={() => void save()}>Save</button>
-      {saved && <p>Saved</p>}
+      <h1>Safenet</h1>
+      <NetworkSettingsForm
+        title={BETA_NETWORK.label}
+        settings={settings.beta}
+        defaultSettings={BETA_NETWORK.defaultSettings}
+        onChange={(beta) => setLocalSettings((prev) => ({ ...prev, beta }))}
+        onSave={() => void save('beta')}
+        saved={saved.beta}
+      />
+      <NetworkSettingsForm
+        title={Q3_NETWORK.label}
+        settings={settings.q3}
+        defaultSettings={Q3_NETWORK.defaultSettings}
+        onChange={(q3) => setLocalSettings((prev) => ({ ...prev, q3 }))}
+        onSave={() => void save('q3')}
+        saved={saved.q3}
+        showSentinelOracle
+      />
     </main>
   )
 }

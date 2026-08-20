@@ -1,6 +1,6 @@
 # Test Case Reference
 
-**37 automated tests across 3 files:** [`src/safenet.test.ts`](../src/safenet.test.ts) (18 tests), [`src/content-helpers.test.ts`](../src/content-helpers.test.ts) (14 tests), [`src/storage.test.ts`](../src/storage.test.ts) (5 tests). The automated suite covers core transaction hashing, relayer calls, on-chain lookups, URL/DOM parsing, and settings persistence. End-to-end browser behaviour and interactions with the live Safe Wallet UI require manual QA - see the "Not covered / manual QA" notes throughout.
+**58 automated tests across 4 files:** [`src/safenet.test.ts`](../src/safenet.test.ts) (18 tests, Safenet Beta), [`src/safenet-q3.test.ts`](../src/safenet-q3.test.ts) (13 tests, Safenet Q3), [`src/content-helpers.test.ts`](../src/content-helpers.test.ts) (18 tests), [`src/storage.test.ts`](../src/storage.test.ts) (9 tests). The automated suite covers core transaction hashing, relayer calls, on-chain lookups (for both networks' ABIs), URL/DOM parsing, dual-widget mounting, and per-network settings persistence. End-to-end browser behaviour and interactions with the live Safe Wallet UI require manual QA - see the "Not covered / manual QA" notes throughout.
 
 This document covers all automated test cases in the project. It is intended for:
 - **QA engineers** who want to understand what is already covered and what requires manual verification
@@ -95,6 +95,57 @@ Queries Gnosis Chain for `TransactionProposed` and `TransactionAttested` events 
 
 ---
 
+## Module: `safenet-q3.ts`
+
+Q3-specific logic mirroring `safenet.ts`, but against the newer, ABI-incompatible Q3 Consensus contract on Ethereum Sepolia, plus correlating a proposed transaction to its Sentinel Oracle review outcome.
+
+---
+
+### `explorerUrlQ3` (1 test)
+
+Builds a URL pointing to the Q3 Safenet explorer for a given chain and safe tx hash.
+
+- Produces the correct explorer URL format: `https://www.safe.dev/safenet/#/safeTx?chainId=<id>&safeTxHash=<hash>`.
+
+---
+
+### `lookupProposalQ3` (4 tests)
+
+Queries Ethereum Sepolia for `TransactionProposed` and `TransactionAttested` events emitted by the Q3 consensus contract, given a `safeTxHash`.
+
+- Returns `{ exists: false, attested: false, explorerUrl: undefined }` when no matching logs are found on-chain.
+- Filters `eth_getLogs` on `topics: [null, safeTxHash]` only, with no third topic — unlike Beta's ABI, Q3's indexed `safeId`/`oracle` params are intentionally not filtered on, since `safeTxHash` alone is already a unique 32-byte hash.
+- Returns `exists: true, attested: false` when a log decodes as `TransactionProposed` but no attestation log is present.
+- Returns `attested: true` when a log decodes as `TransactionAttested` (even if decoding as `TransactionProposed` throws first).
+
+**Not covered / manual QA:** RPC connection failures; logs from unrelated contracts leaking through the filter; very large log sets.
+
+---
+
+### `getSentinelRequestId` (3 tests)
+
+Reads the Sentinel Oracle's `requestId` off the same transaction receipt that emitted `TransactionProposed`, by finding the `NewRequest` log emitted by the Sentinel Oracle's address in that receipt — this avoids reimplementing Consensus's internal EIP-712-style `requestId` hash client-side.
+
+- Returns `null` when the transaction has no receipt.
+- Returns `null` when no log in the receipt decodes as `NewRequest`, and ignores a `NewRequest`-shaped log emitted by an address other than the configured Sentinel Oracle.
+- Returns the `requestId` from a `NewRequest` log at the Sentinel Oracle's address.
+
+**Not covered / manual QA:** A receipt containing multiple `NewRequest` logs (e.g., from other in-flight requests) — the current implementation returns the first match.
+
+---
+
+### `checkOracleResult` (4 tests)
+
+Polls the Sentinel Oracle for an `OracleResult` event matching a given `requestId`, to determine whether sentinels have approved or denied a proposed transaction.
+
+- Returns `{ concluded: false }` when no matching logs are found (sentinels haven't concluded yet — could still be committing/revealing, disputed, or timed out without ever emitting a result).
+- Passes `fromBlock: Q3_SENTINEL_ORACLE_DEPLOYMENT_BLOCK` and filters `topics: [null, requestId]`.
+- Returns `{ concluded: true, approved: true }` / `{ concluded: true, approved: false }` on an approving/denying `OracleResult`.
+
+**Not covered / manual QA:** A disputed request that later resolves via arbitration (`DisputeResolved`) rather than emitting a fresh `OracleResult`; a request that times out without any sentinels ever committing.
+
+---
+
 ## Module: `content-helpers.ts`
 
 Helpers used by the content script that runs inside `app.safe.global`. Responsible for reading state from the page URL and React component tree, detecting the transaction review screen, and managing the extension's status widget in the DOM.
@@ -153,30 +204,39 @@ Determines whether the DOM currently shows the Safe transaction review/sign step
 
 ---
 
-### `ensureUi` and `removeUi` (3 tests)
+### `ensureUi` and `removeUi` (7 tests)
 
-Manages the extension's status widget in the DOM. `ensureUi` creates the widget on first call and returns it on subsequent calls without duplicating it. `removeUi` removes it completely.
+Manages the extension's status widgets in the DOM. `ensureUi` takes a `NetworkConfig` (defaulting to Beta) and creates that network's widget on first call, returning it on subsequent calls without duplicating it. `removeUi` removes only the targeted network's widget.
 
 - Calling `ensureUi` twice returns the exact same DOM element and leaves only one widget in the document. The widget contains a "Run" button, a `↻` icon element, and an empty status element.
 - When the Safe Shield widget (`[data-testid="safe-shield-widget"]`) is present, the extension widget is inserted immediately after it (as the next sibling) and given `position: relative` styling.
 - `removeUi` removes the widget from the DOM so that `getElementById` returns `null` afterwards.
+- Calling `ensureUi` with the Q3 network config creates a distinctly-labeled, distinctly-IDed widget from Beta's.
+- Mounting order is stable regardless of call order: Q3's widget always ends up directly below Beta's — whether Beta mounts first (Q3 anchors after Beta's existing container) or Q3 mounts first (Q3 falls back to the raw anchor since Beta's container doesn't exist yet, then Beta's own mount inserts itself directly after the anchor, pushing Q3 below it).
+- `removeUi(document, Q3_NETWORK)` removes only Q3's container, leaving Beta's intact.
 
-**Not covered / manual QA:** Widget behaviour when Safe Shield widget is removed from the DOM after the extension widget has been mounted; accessibility of the widget (keyboard navigation, screen readers); visual appearance and CSS.
+**Not covered / manual QA:** Widget behaviour when Safe Shield widget is removed from the DOM after the extension widget has been mounted; accessibility of the widget (keyboard navigation, screen readers); visual appearance and CSS; three or more stacked networks (only two are currently defined).
 
 ---
 
 ## Module: `storage.ts`
 
-Reads and writes extension settings using `browser.storage.local`. Settings are validated through the Zod schema on both read and write.
+Reads and writes extension settings using `browser.storage.local`. Settings are validated through the Zod schema on both read and write. `getSettings(networkId)`/`setSettings(settings, networkId)` default `networkId` to `'beta'`, resolving the storage key and defaults for that network from `NETWORKS_BY_ID`.
 
 ---
 
-### `storage helpers` (5 tests)
+### `storage helpers` (5 tests, Beta / default network)
 
 - **Stored value wins on merge:** When `browser.storage.local` contains valid settings with a custom `rpc` URL, `getSettings()` returns that custom URL rather than the default.
 - **Falls back to defaults when empty:** When storage returns an empty object, `getSettings()` returns the built-in `DEFAULT_SETTINGS` values for all fields.
 - **Validates on save:** Calling `setSettings()` with valid settings triggers exactly one `browser.storage.local.set` call.
 - **Throws on invalid save:** Calling `setSettings()` with a `consensus` field that is not a valid Ethereum address throws an error and does not persist to storage.
 - **Throws on corrupt stored data:** If the stored `rpc` field is not a valid URL (e.g., the value `"not-a-url"`), `getSettings()` throws rather than silently returning garbage data.
+
+### `storage helpers > q3 network` (4 tests)
+
+- **Reads/writes under the `safenet-q3-settings` key:** `getSettings('q3')`/`setSettings(settings, 'q3')` read from and write to a storage key entirely separate from Beta's.
+- **Falls back to `Q3_DEFAULT_SETTINGS`** (not Beta's defaults) when storage is empty for the `q3` key.
+- **Saving Q3 settings never touches the `safenet-beta-settings` key** — verified by inspecting the actual object passed to `browser.storage.local.set`.
 
 **Not covered / manual QA:** Concurrent read/write races; storage quota exceeded errors; behaviour when `browser.storage.local` itself throws (e.g., in a restricted extension context); migration of settings from older extension versions with a different schema shape.

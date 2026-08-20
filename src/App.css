@@ -23,6 +23,26 @@ h1 {
   color: #ffffff;
 }
 
+h2 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.network-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.network-section:first-of-type {
+  padding-top: 0;
+  border-top: none;
+}
+
 label {
   display: flex;
   flex-direction: column;
@@ -60,6 +80,25 @@ button {
 
 button:hover {
   background: #00e673;
+}
+
+.button-row {
+  display: flex;
+  gap: 8px;
+}
+
+.button-row button {
+  flex: 1;
+}
+
+button.button-secondary {
+  background: transparent;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.23);
+}
+
+button.button-secondary:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 p {

@@ -172,7 +172,12 @@ export async function loadSafeTransactionFromService(chainId: bigint, safeTxHash
   } satisfies SafeTransactionPayload
 }
 
-export async function submitProposal(settings: ExtensionSettings, payload: SafeTransactionPayload): Promise<void> {
+/** Returns the relayer's raw response body (e.g. it may echo back the submission tx hash), or
+ *  null if the body can't be read -- purely a best-effort diagnostic for callers to log. */
+export async function submitProposal(
+  settings: ExtensionSettings,
+  payload: SafeTransactionPayload,
+): Promise<string | null> {
   if (!isAddress(settings.consensus)) throw new Error('Invalid consensus address')
   const response = await fetch(settings.relayerUrl, {
     method: 'POST',
@@ -194,4 +199,5 @@ export async function submitProposal(settings: ExtensionSettings, payload: SafeT
   })
 
   if (!response.ok) throw new Error('Proposal submission failed')
+  return response.text().catch(() => null)
 }

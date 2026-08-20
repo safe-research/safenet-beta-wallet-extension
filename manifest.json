@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "Safenet Beta Wallet Extension",
+  "name": "Safenet Beta / Q3 Wallet Extension",
   "version": "0.1.0",
-  "description": "Adds a Safenet Beta check to Safe Wallet transaction flows.",
+  "description": "Adds Safenet Beta and Safenet Q3 checks to Safe Wallet transaction flows.",
   "permissions": ["storage", "tabs", "scripting"],
   "host_permissions": [
     "https://app.safe.global/*",
     "https://safe.global/*",
     "https://explorer.safenet-beta.eth.limo/*",
+    "https://www.safe.dev/*",
     "<all_urls>"
   ],
   "background": {
@@ -15,7 +16,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Safenet Beta",
+    "default_title": "Safenet Beta / Q3",
     "default_popup": "dist/popup.html"
   },
   "content_scripts": [
