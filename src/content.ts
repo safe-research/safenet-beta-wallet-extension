@@ -8,7 +8,7 @@ import {
   getChainIdFromUrl,
   getCurrentSafeTxHashFromUrl,
   getDraftTransactionFromPage,
-  isReviewScreen,
+  isWidgetScreen,
   normalizeDraftTransactionData,
   removeUi,
 } from "./content-helpers";
@@ -158,11 +158,14 @@ async function resolveTransaction(): Promise<{
   if (urlHash) {
     log("Loading tx from Safe service:", urlHash);
     const payload = await loadSafeTransactionFromService(chainId, urlHash);
-    if (payload) {
+    // Never submit a payload that doesn't hash to the tx being viewed -- the relayer would propose
+    // a different transaction and the lookup by urlHash would never find it.
+    if (payload && computeSafeTxHash(payload).toLowerCase() === urlHash.toLowerCase()) {
       log("Tx loaded:", payload);
       return { payload, safeTxHash: urlHash };
     }
-    log("Safe service returned null for hash:", urlHash);
+    if (payload) logErr("Safe service tx does not hash to", urlHash, payload);
+    else log("Safe service returned null for hash:", urlHash);
   }
 
   const draftPayload =
@@ -196,7 +199,7 @@ async function waitForTransaction(
 }
 
 function ensurePageUi(network: NetworkConfig) {
-  if (!isReviewScreen(document)) {
+  if (!isWidgetScreen(document, window.location.href)) {
     removeUi(document, network);
     return null;
   }
@@ -557,8 +560,8 @@ function scheduleInit(delay = 150) {
 
 async function init() {
   void ensurePageBridgeInjected();
-  if (!isReviewScreen(document)) {
-    log("Not on Safe review screen, hiding UI");
+  if (!isWidgetScreen(document, window.location.href)) {
+    log("Not on Safe review screen or tx details page, hiding UI");
     for (const network of NETWORKS) removeUi(document, network);
     return;
   }
@@ -590,7 +593,7 @@ const observer = new MutationObserver((mutations) => {
   if (containers.length > 0 && mutations.every((m) => containers.some((c) => c.contains(m.target as Node)))) {
     return;
   }
-  if (isReviewScreen(document) || containers.length > 0) {
+  if (isWidgetScreen(document, window.location.href) || containers.length > 0) {
     scheduleInit();
   }
 });

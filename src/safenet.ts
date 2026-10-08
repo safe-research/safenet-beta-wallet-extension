@@ -41,32 +41,51 @@ export function computeSafeTxHash(payload: SafeTransactionPayload): `0x${string}
   })
 }
 
+type AddressLike = string | { value?: string } | null | undefined
+
+function addressValue(value: AddressLike): string | undefined {
+  return typeof value === 'string' ? value : value?.value
+}
+
+function firstDefined<T>(...values: (T | null | undefined)[]): T | undefined {
+  return values.find((value): value is T => value !== undefined && value !== null)
+}
+
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+
+/** Loads a multisig tx from the Safe client gateway. The current response splits the SafeTx fields:
+ *  `to`/`value`/`operation`/`hexData` live in `txData`, while `nonce`, the gas fields, `gasToken` and
+ *  `refundReceiver` (as `{ value }`) live in `detailedExecutionInfo`. Older flat and txInfo/txData
+ *  shapes are still accepted. */
 export async function loadSafeTransactionFromService(chainId: bigint, safeTxHash: `0x${string}`) {
   const url = `https://safe-client.safe.global/v1/chains/${chainId.toString()}/transactions/${safeTxHash}`
   const response = await fetch(url)
   if (!response.ok) return null
   const json = await response.json()
-  const tx = json?.txInfo ?? json
-  const detailed = json?.txData ?? json?.detailedExecutionInfo ?? json
-  const safeAddress = tx?.safeAddress ?? json?.safeAddress
-  const toValue = detailed?.to?.value ?? detailed?.to ?? json?.to
-  const data = detailed?.dataHex ?? detailed?.data ?? json?.data ?? '0x'
-  const value = detailed?.value ?? json?.value ?? '0'
-  const nonce = detailed?.nonce ?? json?.nonce
-  if (!safeAddress || !toValue || nonce == null) return null
+  const txData = json?.txData ?? {}
+  const execution = json?.detailedExecutionInfo ?? {}
+
+  const safeAddress = firstDefined<string>(json?.safeAddress, json?.txInfo?.safeAddress)
+  const to = addressValue(firstDefined<AddressLike>(txData.to, json?.to))
+  const nonce = firstDefined<string | number>(execution.nonce, txData.nonce, json?.nonce)
+  if (!safeAddress || !to || nonce == null) return null
+
+  const field = (key: string) => firstDefined<string | number>(execution[key], txData[key], json?.[key])
+  const addressField = (key: string) =>
+    addressValue(firstDefined<AddressLike>(execution[key], txData[key], json?.[key])) ?? ZERO_ADDRESS
 
   return {
     chainId,
     safe: getAddress(safeAddress),
-    to: getAddress(typeof toValue === 'string' ? toValue : toValue.value),
-    value: BigInt(value),
-    data: data || '0x',
-    operation: Number(detailed?.operation ?? json?.operation ?? 0) as 0 | 1,
-    safeTxGas: BigInt(detailed?.safeTxGas ?? json?.safeTxGas ?? 0),
-    baseGas: BigInt(detailed?.baseGas ?? json?.baseGas ?? 0),
-    gasPrice: BigInt(detailed?.gasPrice ?? json?.gasPrice ?? 0),
-    gasToken: getAddress(detailed?.gasToken ?? json?.gasToken ?? '0x0000000000000000000000000000000000000000'),
-    refundReceiver: getAddress(detailed?.refundReceiver ?? json?.refundReceiver ?? '0x0000000000000000000000000000000000000000'),
+    to: getAddress(to),
+    value: BigInt(firstDefined<string | number>(txData.value, json?.value) ?? 0),
+    data: firstDefined<`0x${string}`>(txData.hexData, txData.dataHex, txData.data, json?.data) || '0x',
+    operation: Number(firstDefined<number>(txData.operation, json?.operation) ?? 0) as 0 | 1,
+    safeTxGas: BigInt(field('safeTxGas') ?? 0),
+    baseGas: BigInt(field('baseGas') ?? 0),
+    gasPrice: BigInt(field('gasPrice') ?? 0),
+    gasToken: getAddress(addressField('gasToken')),
+    refundReceiver: getAddress(addressField('refundReceiver')),
     nonce: BigInt(nonce),
   } satisfies SafeTransactionPayload
 }

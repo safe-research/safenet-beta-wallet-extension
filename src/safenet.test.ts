@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { computeSafeTxHash, isModuleTransaction, loadSafeTransactionFromService, submitProposal } from './safenet'
 import { AEGIS_PROD_SETTINGS, AEGIS_TESTNET_SETTINGS } from './constants'
 import { settingsSchema } from './schema'
+import safeClientMultisigTx from './test/fixtures/safe-client-multisig-tx.json'
 
 describe('settings schema', () => {
   it.each([AEGIS_TESTNET_SETTINGS, AEGIS_PROD_SETTINGS])('accepts preset settings', (preset) => {
@@ -213,5 +214,19 @@ describe('loadSafeTransactionFromService', () => {
     expect(result!.operation).toBe(1)
     expect(result!.data).toBe('0xabcd')
     expect(result!.nonce).toBe(3n)
+  })
+
+  // Trimmed real response for https://app.safe.global/transactions/tx?id=multisig_0x8886…8a87_0xe3e7…cda0&safe=eth:…
+  it('parses the current client-gateway shape (fields split across txData and detailedExecutionInfo)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => safeClientMultisigTx }))
+    const safeTxHash = safeClientMultisigTx.detailedExecutionInfo.safeTxHash as `0x${string}`
+
+    const result = await loadSafeTransactionFromService(1n, safeTxHash)
+
+    expect(result).not.toBeNull()
+    expect(result!.nonce).toBe(60n)
+    expect(result!.operation).toBe(1)
+    expect(result!.data).toBe(safeClientMultisigTx.txData.hexData)
+    expect(computeSafeTxHash(result!)).toBe(safeTxHash)
   })
 })

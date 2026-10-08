@@ -12,7 +12,7 @@ The latest build from `main` is always available as a GitHub Release:
 
 ## Current scope
 
-- An inline Safenet Aegis check widget on Safe Wallet review and confirm screens
+- An inline Safenet Aegis check widget on Safe Wallet review and confirm screens, and on the transaction details page
 - Proposal lookup by SafeTxHash; submits via relayer if not yet proposed
 - Polls Gnosis Chain for `TransactionProposed` and `TransactionAttested` events on the Aegis Consensus contract, plus the Sentinel Oracle's review conclusion
 - Explorer link shown as soon as the on-chain proposal tx is confirmed
@@ -48,7 +48,14 @@ Load that folder directly (Chrome/Brave) or select `manifest.json` from it (Fire
 
 ## Widget behavior
 
-The widget appears inline below the SafeShield row on review and confirm screens. It has a sentinel-review step between submission and validator attestation:
+The widget appears inline:
+
+- **Review and confirm screens:** below the SafeShield row.
+- **Transaction details page** (`/transactions/tx?id=multisig_<safe>_<safeTxHash>`): in the audit-log column, directly above the Confirm/Execute + Reject buttons. For executed transactions, which have no buttons, it sits below the audit log. The transaction is loaded from the Safe client gateway using the safeTxHash in the URL.
+
+Opening Confirm from the details page moves the widget into the signing modal, and it returns when the modal closes.
+
+The check has a sentinel-review step between submission and validator attestation:
 
 | State | What you see |
 |---|---|

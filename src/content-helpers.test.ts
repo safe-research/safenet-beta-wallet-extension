@@ -7,6 +7,8 @@ import {
   getDraftTransactionFromPage,
   getSafeAddressFromUrl,
   isReviewScreen,
+  isTxDetailsPage,
+  isWidgetScreen,
   removeUi,
 } from './content-helpers'
 
@@ -166,5 +168,116 @@ describe('ensureUi', () => {
 
     expect(container.id).toBe(AEGIS_NETWORK.ui.container)
     expect(container.textContent).toContain('Safenet Aegis')
+  })
+})
+
+const TX_DETAILS_URL =
+  'https://app.safe.global/transactions/tx?id=multisig_0x888614448Eb7c766864faFb1Dd20ff0b47988a87_0xe3e7ee18f1338608d5f6090c49b19395f4aa0b35123918afd1c37ee203eccda0&safe=eth:0x888614448eb7c766864fafb1dd20ff0b47988a87'
+
+// Mirrors Safe Wallet's TxDetails right-hand column: audit log, then (for queued txs) a buttons row
+// where each button is wrapped in a Track element.
+function txDetailsColumn(actions: string) {
+  return `
+    <div id="signers">
+      <div data-testid="transaction-actions-list">
+        <button data-testid="copy-tx-hash-btn">#</button>
+        <button data-testid="share-tx-link-btn">Share</button>
+      </div>
+      ${actions}
+    </div>
+  `
+}
+const CONFIRM_REJECT_ROW = `
+  <div id="buttons">
+    <span data-track="tx-list: Confirm"><button>Confirm</button></span>
+    <span data-track="tx-list: Reject"><button data-testid="reject-btn">Reject</button></span>
+  </div>
+`
+
+describe('isTxDetailsPage', () => {
+  it('returns true on a multisig tx details page with Safe Wallet actions rendered', () => {
+    document.body.innerHTML = txDetailsColumn(CONFIRM_REJECT_ROW)
+    expect(isTxDetailsPage(document, TX_DETAILS_URL)).toBe(true)
+    expect(isWidgetScreen(document, TX_DETAILS_URL)).toBe(true)
+  })
+
+  it('returns true for an executed tx with only the audit log', () => {
+    document.body.innerHTML = txDetailsColumn('')
+    expect(isTxDetailsPage(document, TX_DETAILS_URL)).toBe(true)
+  })
+
+  it('returns false before the details have rendered', () => {
+    document.body.innerHTML = '<div>Loading...</div>'
+    expect(isTxDetailsPage(document, TX_DETAILS_URL)).toBe(false)
+  })
+
+  it('returns false on the queue list, even with expanded tx actions', () => {
+    document.body.innerHTML = txDetailsColumn(CONFIRM_REJECT_ROW)
+    expect(isTxDetailsPage(document, 'https://app.safe.global/transactions/queue?safe=eth:0x888614448eb7c766864fafb1dd20ff0b47988a87')).toBe(false)
+    expect(isWidgetScreen(document, 'https://app.safe.global/transactions/queue?safe=eth:0x888614448eb7c766864fafb1dd20ff0b47988a87')).toBe(false)
+  })
+
+  it('returns false without a safeTxHash in the id param', () => {
+    document.body.innerHTML = txDetailsColumn(CONFIRM_REJECT_ROW)
+    expect(isTxDetailsPage(document, 'https://app.safe.global/transactions/tx?safe=eth:0x888614448eb7c766864fafb1dd20ff0b47988a87')).toBe(false)
+  })
+})
+
+describe('ensureUi on the tx details page', () => {
+  it('mounts directly above the Confirm/Reject row', () => {
+    document.body.innerHTML = txDetailsColumn(CONFIRM_REJECT_ROW)
+
+    const container = ensureUi(document)
+
+    expect(container.nextElementSibling?.id).toBe('buttons')
+    expect(container.parentElement?.id).toBe('signers')
+    expect(container.style.position).toBe('relative')
+  })
+
+  it('stays in place on repeated calls', () => {
+    document.body.innerHTML = txDetailsColumn(CONFIRM_REJECT_ROW)
+
+    const first = ensureUi(document)
+    const second = ensureUi(document)
+
+    expect(first).toBe(second)
+    expect(document.querySelectorAll(`#${UI_IDS.container}`)).toHaveLength(1)
+    expect(second.nextElementSibling?.id).toBe('buttons')
+  })
+
+  it('mounts directly above Reject when it is the only action', () => {
+    document.body.innerHTML = txDetailsColumn(
+      '<span data-track="tx-list: Reject"><button data-testid="reject-btn">Reject</button></span>',
+    )
+
+    const container = ensureUi(document)
+
+    expect(container.nextElementSibling?.getAttribute('data-track')).toBe('tx-list: Reject')
+  })
+
+  it('mounts below the audit log when there are no actions (executed tx)', () => {
+    document.body.innerHTML = txDetailsColumn('')
+
+    const container = ensureUi(document)
+
+    expect(container.previousElementSibling?.getAttribute('data-testid')).toBe('transaction-actions-list')
+  })
+
+  it('moves into the signing modal when it opens, and back when it closes', () => {
+    document.body.innerHTML = `${txDetailsColumn(CONFIRM_REJECT_ROW)}<div id="modal"></div>`
+    const container = ensureUi(document)
+
+    document.getElementById('modal')!.innerHTML = `
+      <div data-testid="safe-shield-widget">Safe Shield</div>
+      <button data-testid="sign-btn">Sign</button>
+    `
+    ensureUi(document)
+    expect(container.previousElementSibling?.getAttribute('data-testid')).toBe('safe-shield-widget')
+
+    // Closing the modal unmounts its subtree, our widget included; it is recreated on the page.
+    document.getElementById('modal')!.innerHTML = ''
+    const remounted = ensureUi(document)
+    expect(remounted.nextElementSibling?.id).toBe('buttons')
+    expect(document.querySelectorAll(`#${UI_IDS.container}`)).toHaveLength(1)
   })
 })

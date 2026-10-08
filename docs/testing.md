@@ -1,6 +1,6 @@
 # Test Case Reference
 
-**57 automated tests across 4 files:** [`src/safenet.test.ts`](../src/safenet.test.ts) (18 tests, shared tx helpers), [`src/safenet-aegis.test.ts`](../src/safenet-aegis.test.ts) (18 tests, Safenet Aegis), [`src/content-helpers.test.ts`](../src/content-helpers.test.ts) (15 tests), [`src/storage.test.ts`](../src/storage.test.ts) (6 tests). The automated suite covers core transaction hashing, relayer calls, Aegis on-chain lookups, URL/DOM parsing, widget mounting, and settings persistence. End-to-end browser behaviour and interactions with the live Safe Wallet UI require manual QA - see the "Not covered / manual QA" notes throughout.
+**68 automated tests across 4 files:** [`src/safenet.test.ts`](../src/safenet.test.ts) (19 tests, shared tx helpers), [`src/safenet-aegis.test.ts`](../src/safenet-aegis.test.ts) (18 tests, Safenet Aegis), [`src/content-helpers.test.ts`](../src/content-helpers.test.ts) (25 tests), [`src/storage.test.ts`](../src/storage.test.ts) (6 tests). The automated suite covers core transaction hashing, relayer calls, Aegis on-chain lookups, URL/DOM parsing, widget mounting (review screens and the tx details page), and settings persistence. End-to-end browser behaviour and interactions with the live Safe Wallet UI require manual QA - see the "Not covered / manual QA" notes throughout.
 
 This document covers all automated test cases in the project. It is intended for:
 - **QA engineers** who want to understand what is already covered and what requires manual verification
@@ -64,7 +64,7 @@ Identifies whether a transaction is a module-initiated transaction based on the 
 
 ---
 
-### `loadSafeTransactionFromService` (4 tests)
+### `loadSafeTransactionFromService` (5 tests)
 
 Fetches a Safe transaction from the Safe Transaction Service REST API and normalises it into the internal `SafeTransactionPayload` shape (with BigInt fields for numeric values).
 
@@ -72,6 +72,7 @@ Fetches a Safe transaction from the Safe Transaction Service REST API and normal
 - Returns `null` when required fields (`to`, `value`, `nonce`, etc.) are missing from the response body.
 - Parses the **flat response format**: all transaction fields are top-level properties on the response object (`to`, `value`, `data`, `operation`, ...). Numeric string fields are converted to `BigInt`.
 - Parses the **nested txInfo/txData response format**: transaction fields are split between a `txInfo` object (contains `safeAddress`) and a `txData` object (contains `to.value`, `dataHex`, `value`, etc.). This is the shape returned by the newer Safe Transaction Service `/transactions` endpoint.
+- Parses the **current client-gateway shape**, using a trimmed real response (fixture `src/test/fixtures/safe-client-multisig-tx.json`). Here `to`/`value`/`operation`/`hexData` are in `txData`, and `nonce`, the gas fields, `gasToken` and `refundReceiver` (`{ value }`) are in `detailedExecutionInfo`. The parsed payload must recompute to the response's `safeTxHash`.
 
 **Not covered / manual QA:** Partial responses where only some nested fields exist; network timeouts; non-JSON response bodies; chains other than Sepolia (1n) and Gnosis Chain (100n).
 
@@ -191,6 +192,19 @@ Determines whether the DOM currently shows the Safe transaction review/sign step
 
 ---
 
+### `isTxDetailsPage` / `isWidgetScreen` (5 tests)
+
+Detects the transaction details page (`/transactions/tx?id=multisig_<safe>_<safeTxHash>`), where the widget is also shown.
+
+- Returns `true` when the URL is a details page with a safeTxHash and either `[data-testid="reject-btn"]` (queued tx) or the audit log `[data-testid="transaction-actions-list"]` (executed tx) has rendered. `isWidgetScreen` is `true` there too.
+- Returns `false` while the details haven't rendered yet.
+- Returns `false` on the queue list, even though expanded rows render the same buttons.
+- Returns `false` when the `id` param has no safeTxHash.
+
+**Not covered / manual QA:** The real Safe Wallet details page. The DOM in the tests mirrors `TxDetails`/`TxSigners` in safe-wallet-monorepo; verify placement visually after Safe Wallet updates.
+
+---
+
 ### `ensureUi` and `removeUi` (4 tests)
 
 Manages the extension's status widget in the DOM. `ensureUi` takes a `NetworkConfig` (defaulting to Aegis) and creates the widget on first call, returning it on subsequent calls without duplicating it. `removeUi` removes it.
@@ -199,6 +213,14 @@ Manages the extension's status widget in the DOM. `ensureUi` takes a `NetworkCon
 - When the Safe Shield widget (`[data-testid="safe-shield-widget"]`) is present, the extension widget is inserted immediately after it (as the next sibling) and given `position: relative` styling.
 - `removeUi` removes the widget from the DOM so that `getElementById` returns `null` afterwards.
 - The widget is labeled "Safenet Aegis" and uses the `safenet-aegis-check-*` element ids.
+
+### `ensureUi on the tx details page` (5 tests)
+
+- Mounts directly above the Confirm/Reject row, inside the same column. The row is found as the nearest ancestor of `reject-btn` with 2+ buttons, since each button is wrapped in a `data-track` element.
+- Stays in place on repeated calls; there is never more than one widget.
+- When Reject is the only action, mounts directly above Reject's wrapper rather than above the whole column.
+- With no actions (executed tx), mounts below the audit log.
+- When the signing modal opens, moves below its Safe Shield widget. When the modal closes and unmounts it, it's recreated above the Confirm/Reject row.
 
 **Not covered / manual QA:** Widget behaviour when Safe Shield widget is removed from the DOM after the extension widget has been mounted; accessibility of the widget (keyboard navigation, screen readers); visual appearance and CSS.
 
