@@ -111,13 +111,20 @@ type SentinelDeps = {
   normalizeAddress?: typeof getAddress
 }
 
-// `Consensus.proposeTransaction()` calls `SentinelOracle.postRequest()` in the same transaction
-// that emits `TransactionProposed`, and `postRequest` emits `NewRequest(requestId, ...)`
-// synchronously. Reading `requestId` off that log (rather than recomputing the EIP-712-style hash
+// `Consensus.proposeTransaction()` emits `TransactionProposed` and then calls
+// `SentinelOracle.postRequest()`, which emits `NewRequest(requestId, ...)` synchronously. Reading
+// `requestId` off that log (rather than recomputing the EIP-712-style hash
 // `ConsensusMessages.transactionProposal` uses internally) avoids reimplementing an undocumented
 // low-level assembly encoding client-side.
+//
+// A relayer may batch several proposals into one transaction, so the receipt is split into
+// segments: each `TransactionProposed` from the configured consensus opens a segment that runs
+// until the next one, and `NewRequest` logs from the configured oracle belong to the segment they
+// fall in. The target's segment (matching safeTxHash and oracle) must be unique and contain exactly
+// one `NewRequest`; anything else is missing or ambiguous and returns null.
 export async function getSentinelRequestId(
   settings: ExtensionSettings,
+  safeTxHash: `0x${string}`,
   proposalTxHash: `0x${string}`,
   deps: SentinelDeps = {},
 ): Promise<`0x${string}` | null> {
@@ -129,24 +136,46 @@ export async function getSentinelRequestId(
   const receipt = (await client.request({
     method: 'eth_getTransactionReceipt',
     params: [proposalTxHash],
-  })) as { logs: Array<{ address: `0x${string}`; data: Hex; topics: [Hex, ...Hex[]] }> } | null
+  })) as { logs: Array<{ address: `0x${string}`; data: Hex; topics: [Hex, ...Hex[]]; logIndex?: Hex }> } | null
 
   if (!receipt) return null
 
+  const consensus = normalizeAddress(settings.consensus)
   const sentinelOracle = normalizeAddress(settings.sentinelOracle)
-  for (const log of receipt.logs) {
-    if (normalizeAddress(log.address) !== sentinelOracle) continue
-    try {
-      const decoded = decodeLog({ abi: [newRequestEvent], data: log.data, topics: log.topics })
-      if (decoded.eventName === 'NewRequest') {
-        return decoded.args.requestId
+  const logs = receipt.logs.every((log) => log.logIndex !== undefined)
+    ? [...receipt.logs].sort((a, b) => Number(BigInt(a.logIndex!) - BigInt(b.logIndex!)))
+    : receipt.logs
+
+  const segments: Array<{ safeTxHash: Hex; oracle: `0x${string}`; requestIds: `0x${string}`[] }> = []
+  for (const log of logs) {
+    const address = normalizeAddress(log.address)
+    if (address === consensus) {
+      try {
+        const decoded = decodeLog({ abi: [transactionProposedEvent], data: log.data, topics: log.topics })
+        if (decoded.eventName === 'TransactionProposed') {
+          segments.push({ safeTxHash: decoded.args.safeTxHash, oracle: decoded.args.oracle, requestIds: [] })
+        }
+      } catch {
+        // not a TransactionProposed log; not a segment boundary
       }
-    } catch {
-      // not a NewRequest log; keep scanning this receipt's other logs
+    } else if (address === sentinelOracle) {
+      try {
+        const decoded = decodeLog({ abi: [newRequestEvent], data: log.data, topics: log.topics })
+        // A NewRequest before any proposal can't be attributed to one, so it is dropped.
+        if (decoded.eventName === 'NewRequest') segments.at(-1)?.requestIds.push(decoded.args.requestId)
+      } catch {
+        // not a NewRequest log; keep scanning this receipt's other logs
+      }
     }
   }
 
-  return null
+  const matches = segments.filter(
+    (segment) =>
+      segment.safeTxHash.toLowerCase() === safeTxHash.toLowerCase() &&
+      normalizeAddress(segment.oracle) === sentinelOracle,
+  )
+  if (matches.length !== 1 || matches[0].requestIds.length !== 1) return null
+  return matches[0].requestIds[0]
 }
 
 export async function checkOracleResult(

@@ -388,7 +388,7 @@ async function pollForAttestationAegis(
     }
 
     if (!requestId && proposalTxHash) {
-      requestId = await getSentinelRequestId(settings, proposalTxHash);
+      requestId = await getSentinelRequestId(settings, safeTxHash, proposalTxHash);
     }
     if (requestId) {
       const sentinelResult = await checkOracleResult(settings, requestId);

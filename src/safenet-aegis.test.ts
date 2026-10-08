@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { decodeEventLog, encodeAbiParameters, parseAbiItem, toEventSelector } from 'viem'
+import { decodeEventLog, encodeAbiParameters, encodeEventTopics, parseAbiItem } from 'viem'
 import { checkOracleResult, explorerUrlAegis, getSentinelRequestId, lookupProposalAegis } from './safenet-aegis'
 import { AEGIS_LOGS_FROM_BLOCK, AEGIS_PROD_SETTINGS, AEGIS_TESTNET_SETTINGS } from './constants'
 
@@ -105,124 +105,237 @@ describe('lookupProposalAegis', () => {
   })
 })
 
+const CONSENSUS = AEGIS_TESTNET_SETTINGS.consensus as `0x${string}`
+const OTHER_ORACLE = '0x2222222222222222222222222222222222222222'
+
+const transactionProposedEvent = parseAbiItem(
+  'event TransactionProposed(bytes32 indexed safeTxHash, bytes32 indexed safeId, address indexed oracle, uint64 epoch, bytes oracleData, (uint256 chainId, address safe, address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, uint256 nonce) transaction)',
+)
+const newRequestEvent = parseAbiItem(
+  'event NewRequest(bytes32 indexed requestId, address indexed sponsor, uint96 fee, uint96 bondTarget, uint24 daoFeeShare, uint96 slashAmount, uint64 commitDeadline, uint64 revealDeadline)',
+)
+const oracleResultEvent = parseAbiItem(
+  'event OracleResult(bytes32 indexed requestId, address indexed sponsor, bytes result, bool approved)',
+)
+const transferEvent = parseAbiItem('event Transfer(address indexed from, address indexed to, uint256 value)')
+
+type ReceiptLog = {
+  address: `0x${string}`
+  data: `0x${string}`
+  topics: [`0x${string}`, ...`0x${string}`[]]
+  logIndex?: `0x${string}`
+}
+
+const hash = (c: string) => ('0x' + c.repeat(64)) as `0x${string}`
+const SPONSOR = '0x1111111111111111111111111111111111111111'
+
+function proposedLog(safeTxHash: `0x${string}`, oracle: `0x${string}`, address: `0x${string}` = CONSENSUS): ReceiptLog {
+  return {
+    address,
+    topics: encodeEventTopics({
+      abi: [transactionProposedEvent],
+      args: { safeTxHash, safeId: hash('5'), oracle },
+    }) as ReceiptLog['topics'],
+    data: encodeAbiParameters(transactionProposedEvent.inputs.filter((input) => !('indexed' in input)), [
+      7n,
+      '0x',
+      {
+        chainId: 100n,
+        safe: SPONSOR,
+        to: SPONSOR,
+        value: 0n,
+        data: '0x',
+        operation: 0,
+        safeTxGas: 0n,
+        baseGas: 0n,
+        gasPrice: 0n,
+        gasToken: '0x0000000000000000000000000000000000000000',
+        refundReceiver: '0x0000000000000000000000000000000000000000',
+        nonce: 1n,
+      },
+    ]),
+  }
+}
+
+function newRequestLog(requestId: `0x${string}`, address: `0x${string}` = SENTINEL_ORACLE as `0x${string}`): ReceiptLog {
+  return {
+    address,
+    topics: encodeEventTopics({ abi: [newRequestEvent], args: { requestId, sponsor: SPONSOR } }) as ReceiptLog['topics'],
+    data: encodeAbiParameters(newRequestEvent.inputs.filter((input) => !('indexed' in input)), [1n, 2n, 3, 4n, 5n, 6n]),
+  }
+}
+
+function oracleResultLog(requestId: `0x${string}`, approved: boolean): ReceiptLog {
+  return {
+    address: SENTINEL_ORACLE as `0x${string}`,
+    topics: encodeEventTopics({ abi: [oracleResultEvent], args: { requestId, sponsor: SPONSOR } }) as ReceiptLog['topics'],
+    data: encodeAbiParameters(oracleResultEvent.inputs.filter((input) => !('indexed' in input)), ['0x', approved]),
+  }
+}
+
+function transferLog(): ReceiptLog {
+  return {
+    address: '0x3b1cFcfa89A19F6CDf8995ee8AE35D7D585e7025',
+    topics: encodeEventTopics({ abi: [transferEvent], args: { from: SPONSOR, to: CONSENSUS } }) as ReceiptLog['topics'],
+    data: encodeAbiParameters([{ type: 'uint256' }], [10n]),
+  }
+}
+
+const receiptClient = (logs: ReceiptLog[] | null) => () => ({ request: vi.fn().mockResolvedValue(logs && { logs }) }) as never
+
 describe('getSentinelRequestId', () => {
-  const proposalTxHash = ('0x' + 'e'.repeat(64)) as `0x${string}`
-  const requestId = ('0x' + 'f'.repeat(64)) as `0x${string}`
+  const proposalTxHash = hash('e')
+  const safeTxHashA = hash('a')
+  const safeTxHashB = hash('b')
+  const requestA = hash('c')
+  const requestB = hash('d')
+  const oracle = SENTINEL_ORACLE as `0x${string}`
 
   it('returns null when the transaction has no receipt', async () => {
-    const result = await getSentinelRequestId(SETTINGS, proposalTxHash, {
-      createClient: () => ({ request: vi.fn().mockResolvedValue(null) }) as never,
+    const result = await getSentinelRequestId(SETTINGS, safeTxHashA, proposalTxHash, { createClient: receiptClient(null) })
+    expect(result).toBeNull()
+  })
+
+  it('returns the requestId of the NewRequest following the matching proposal', async () => {
+    const result = await getSentinelRequestId(SETTINGS, safeTxHashA, proposalTxHash, {
+      createClient: receiptClient([proposedLog(safeTxHashA, oracle), transferLog(), newRequestLog(requestA)]),
+    })
+    expect(result).toBe(requestA)
+  })
+
+  it('returns null when the target safeTxHash was not proposed in the receipt', async () => {
+    const result = await getSentinelRequestId(SETTINGS, safeTxHashB, proposalTxHash, {
+      createClient: receiptClient([proposedLog(safeTxHashA, oracle), newRequestLog(requestA)]),
     })
     expect(result).toBeNull()
   })
 
-  it('returns null when no log at the Sentinel Oracle address decodes as NewRequest', async () => {
-    const result = await getSentinelRequestId(SETTINGS, proposalTxHash, {
-      createClient: () =>
-        ({
-          request: vi.fn().mockResolvedValue({
-            logs: [{ address: '0x1111111111111111111111111111111111111111', data: '0x', topics: ['0xaaa'] }],
-          }),
-        }) as never,
-      decodeLog: vi.fn(() => {
-        throw new Error('nope')
-      }) as never,
+  it('returns null when the target was proposed with a different oracle', async () => {
+    const result = await getSentinelRequestId(SETTINGS, safeTxHashA, proposalTxHash, {
+      createClient: receiptClient([proposedLog(safeTxHashA, OTHER_ORACLE), newRequestLog(requestA)]),
     })
     expect(result).toBeNull()
   })
 
-  it('ignores a NewRequest-shaped log from an address other than the Sentinel Oracle', async () => {
-    const decodeLog = vi.fn().mockReturnValue({ eventName: 'NewRequest', args: { requestId } })
-
-    const result = await getSentinelRequestId(SETTINGS, proposalTxHash, {
-      createClient: () =>
-        ({
-          request: vi.fn().mockResolvedValue({
-            logs: [{ address: '0x1111111111111111111111111111111111111111', data: '0x', topics: ['0xaaa'] }],
-          }),
-        }) as never,
-      decodeLog: decodeLog as never,
+  it('ignores TransactionProposed from an address other than the configured consensus', async () => {
+    const result = await getSentinelRequestId(SETTINGS, safeTxHashA, proposalTxHash, {
+      createClient: receiptClient([proposedLog(safeTxHashA, oracle, OTHER_ORACLE), newRequestLog(requestA)]),
     })
-
     expect(result).toBeNull()
-    expect(decodeLog).not.toHaveBeenCalled()
   })
 
-  it('returns the requestId from a NewRequest log at the Sentinel Oracle address', async () => {
-    const decodeLog = vi.fn().mockReturnValue({ eventName: 'NewRequest', args: { requestId } })
-
-    const result = await getSentinelRequestId(SETTINGS, proposalTxHash, {
-      createClient: () =>
-        ({
-          request: vi.fn().mockResolvedValue({
-            logs: [{ address: SENTINEL_ORACLE, data: '0x1234', topics: ['0xaaa'] }],
-          }),
-        }) as never,
-      decodeLog: decodeLog as never,
+  it('ignores NewRequest from an address other than the configured oracle', async () => {
+    const result = await getSentinelRequestId(SETTINGS, safeTxHashA, proposalTxHash, {
+      createClient: receiptClient([proposedLog(safeTxHashA, oracle), newRequestLog(requestA, OTHER_ORACLE)]),
     })
-
-    expect(result).toBe(requestId)
+    expect(result).toBeNull()
   })
 
-  it('uses a custom sentinelOracle address from settings instead of the default', async () => {
-    const customOracle = '0x2222222222222222222222222222222222222222'
-    const decodeLog = vi.fn().mockReturnValue({ eventName: 'NewRequest', args: { requestId } })
+  it("does not take the next proposal's request when the target's segment has none", async () => {
+    const result = await getSentinelRequestId(SETTINGS, safeTxHashA, proposalTxHash, {
+      createClient: receiptClient([proposedLog(safeTxHashA, oracle), proposedLog(safeTxHashB, oracle), newRequestLog(requestB)]),
+    })
+    expect(result).toBeNull()
+  })
 
-    const resultAtDefault = await getSentinelRequestId(
-      { ...SETTINGS, sentinelOracle: customOracle },
-      proposalTxHash,
-      {
-        createClient: () =>
-          ({
-            request: vi.fn().mockResolvedValue({
-              logs: [{ address: SENTINEL_ORACLE, data: '0x1234', topics: ['0xaaa'] }],
-            }),
-          }) as never,
-        decodeLog: decodeLog as never,
-      },
-    )
-    expect(resultAtDefault).toBeNull() // the preset address is no longer the configured oracle
+  it("treats a proposal with another oracle as a boundary", async () => {
+    const result = await getSentinelRequestId(SETTINGS, safeTxHashA, proposalTxHash, {
+      createClient: receiptClient([proposedLog(safeTxHashA, oracle), proposedLog(safeTxHashB, OTHER_ORACLE), newRequestLog(requestB)]),
+    })
+    expect(result).toBeNull()
+  })
 
-    const resultAtCustom = await getSentinelRequestId(
-      { ...SETTINGS, sentinelOracle: customOracle },
-      proposalTxHash,
-      {
-        createClient: () =>
-          ({
-            request: vi.fn().mockResolvedValue({
-              logs: [{ address: customOracle, data: '0x1234', topics: ['0xaaa'] }],
-            }),
-          }) as never,
-        decodeLog: decodeLog as never,
-      },
-    )
-    expect(resultAtCustom).toBe(requestId)
+  it("returns null when the target's segment has two NewRequests", async () => {
+    const result = await getSentinelRequestId(SETTINGS, safeTxHashA, proposalTxHash, {
+      createClient: receiptClient([proposedLog(safeTxHashA, oracle), newRequestLog(requestA), newRequestLog(requestB)]),
+    })
+    expect(result).toBeNull()
+  })
+
+  it('returns null when the target is proposed twice in the receipt', async () => {
+    const result = await getSentinelRequestId(SETTINGS, safeTxHashA, proposalTxHash, {
+      createClient: receiptClient([
+        proposedLog(safeTxHashA, oracle),
+        newRequestLog(requestA),
+        proposedLog(safeTxHashA, oracle),
+        newRequestLog(requestB),
+      ]),
+    })
+    expect(result).toBeNull()
+  })
+
+  it('does not attribute a NewRequest that precedes every proposal', async () => {
+    const result = await getSentinelRequestId(SETTINGS, safeTxHashA, proposalTxHash, {
+      createClient: receiptClient([newRequestLog(requestA), proposedLog(safeTxHashA, oracle)]),
+    })
+    expect(result).toBeNull()
+  })
+
+  it('orders logs by logIndex when present', async () => {
+    const result = await getSentinelRequestId(SETTINGS, safeTxHashA, proposalTxHash, {
+      createClient: receiptClient([
+        { ...newRequestLog(requestA), logIndex: '0x1' },
+        { ...proposedLog(safeTxHashA, oracle), logIndex: '0x0' },
+      ]),
+    })
+    expect(result).toBe(requestA)
+  })
+
+  it('uses custom consensus and sentinelOracle addresses from settings', async () => {
+    const customConsensus = '0x4444444444444444444444444444444444444444'
+    const customOracle = '0x3333333333333333333333333333333333333333'
+    const custom = { ...SETTINGS, consensus: customConsensus, sentinelOracle: customOracle }
+
+    expect(
+      await getSentinelRequestId(custom, safeTxHashA, proposalTxHash, {
+        createClient: receiptClient([proposedLog(safeTxHashA, oracle), newRequestLog(requestA)]),
+      }),
+    ).toBeNull()
+    expect(
+      await getSentinelRequestId(custom, safeTxHashA, proposalTxHash, {
+        createClient: receiptClient([
+          proposedLog(safeTxHashA, customOracle, customConsensus),
+          newRequestLog(requestA, customOracle),
+        ]),
+      }),
+    ).toBe(requestA)
   })
 })
 
-describe('getSentinelRequestId with the real NewRequest ABI', () => {
-  it('decodes a NewRequest log that includes daoFeeShare', async () => {
-    const event = parseAbiItem(
-      'event NewRequest(bytes32 indexed requestId, address indexed sponsor, uint96 fee, uint96 bondTarget, uint24 daoFeeShare, uint96 slashAmount, uint64 commitDeadline, uint64 revealDeadline)',
-    )
-    const requestId = ('0x' + '9'.repeat(64)) as `0x${string}`
-    const sponsor = ('0x' + '0'.repeat(24) + '1'.repeat(40)) as `0x${string}`
-    const data = encodeAbiParameters(
-      [{ type: 'uint96' }, { type: 'uint96' }, { type: 'uint24' }, { type: 'uint96' }, { type: 'uint64' }, { type: 'uint64' }],
-      [1n, 2n, 3, 4n, 5n, 6n],
-    )
+describe('sentinel correlation for batched proposals (real ABI)', () => {
+  it('gives each transaction in a batch its own request and verdict', async () => {
+    const proposalTxHash = hash('e')
+    const safeTxHashA = hash('a')
+    const safeTxHashB = hash('b')
+    const requestA = hash('c')
+    const requestB = hash('d')
+    const oracle = SENTINEL_ORACLE as `0x${string}`
 
-    const result = await getSentinelRequestId(SETTINGS, ('0x' + 'e'.repeat(64)) as `0x${string}`, {
-      createClient: () =>
-        ({
-          request: vi.fn().mockResolvedValue({
-            logs: [{ address: SENTINEL_ORACLE, data, topics: [toEventSelector(event), requestId, sponsor] }],
-          }),
-        }) as never,
-      decodeLog: decodeEventLog,
+    const receipt = {
+      logs: [
+        proposedLog(safeTxHashA, oracle),
+        transferLog(),
+        newRequestLog(requestA),
+        proposedLog(safeTxHashB, oracle),
+        transferLog(),
+        newRequestLog(requestB),
+      ],
+    }
+    const oracleResults = [oracleResultLog(requestA, false), oracleResultLog(requestB, true)]
+    const request = vi.fn(async ({ method, params }: { method: string; params: [unknown] }) => {
+      if (method === 'eth_getTransactionReceipt') return params[0] === proposalTxHash ? receipt : null
+      if (method === 'eth_getLogs') return oracleResults.filter((log) => log.topics[1] === (params[0] as { topics: `0x${string}`[] }).topics[1])
+      throw new Error(`unexpected ${method}`)
     })
+    const deps = { createClient: () => ({ request }) as never, decodeLog: decodeEventLog }
 
-    expect(result).toBe(requestId)
+    const idA = await getSentinelRequestId(SETTINGS, safeTxHashA, proposalTxHash, deps)
+    const idB = await getSentinelRequestId(SETTINGS, safeTxHashB, proposalTxHash, deps)
+    expect(idA).toBe(requestA)
+    expect(idB).toBe(requestB)
+
+    expect(await checkOracleResult(SETTINGS, idA!, deps)).toEqual({ concluded: true, approved: false })
+    expect(await checkOracleResult(SETTINGS, idB!, deps)).toEqual({ concluded: true, approved: true })
   })
 })
 
