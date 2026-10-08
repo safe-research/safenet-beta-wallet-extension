@@ -1,22 +1,22 @@
-# Safenet Beta Wallet Extension
+# Safenet Aegis Wallet Extension
 
 > **Warning: This is a prototype. Code has not been audited. Use at your own risk.**
 
-Browser extension that adds Safenet Beta and Safenet Q3 checks to Safe Wallet transaction flows.
+Browser extension that adds Safenet Aegis checks to Safe Wallet transaction flows. (Safenet Beta has been shut down; Safenet Q3 is now Safenet Aegis.)
 
 ## Download
 
 The latest build from `main` is always available as a GitHub Release:
 
-**[Download safenet-beta-extension.zip](https://github.com/safe-research/safenet-beta-wallet-extension/releases/latest/download/safenet-beta-extension.zip)**
+**[Download safenet-aegis-extension.zip](https://github.com/safe-research/safenet-beta-wallet-extension/releases/latest/download/safenet-aegis-extension.zip)**
 
 ## Current scope
 
-- Two independent inline check widgets on Safe Wallet review and confirm screens: Safenet Beta (Gnosis Chain) and Safenet Q3 (Ethereum Sepolia), stacked one below the other
+- An inline Safenet Aegis check widget on Safe Wallet review and confirm screens
 - Proposal lookup by SafeTxHash; submits via relayer if not yet proposed
-- Beta polls Gnosis Chain for `TransactionProposed` and `TransactionAttested` events; Q3 polls Sepolia for the same events plus the Sentinel Oracle's review conclusion
+- Polls Gnosis Chain for `TransactionProposed` and `TransactionAttested` events on the Aegis Consensus contract, plus the Sentinel Oracle's review conclusion
 - Explorer link shown as soon as the on-chain proposal tx is confirmed
-- Popup settings for consensus contract address, RPC endpoint, and relayer URL — independent per network
+- Popup settings with one-click testnet / prod presets; every field stays manually editable
 - Chrome, Brave, and Firefox support
 
 ## Development
@@ -48,40 +48,30 @@ Load that folder directly (Chrome/Brave) or select `manifest.json` from it (Fire
 
 ## Widget behavior
 
-Both widgets appear inline below the SafeShield row on review and confirm screens, Q3 stacked directly below Beta. Each has its own independent Run button, settings, and poll loop.
-
-### Safenet Beta
+The widget appears inline below the SafeShield row on review and confirm screens. It has a sentinel-review step between submission and validator attestation:
 
 | State | What you see |
 |---|---|
-| Idle | `↻ Safenet Beta` + **Run** button |
-| After clicking Run | **Running...** (disabled) + "Polling..." |
-| TransactionProposed seen | "Submitted" + **View ↗** explorer link |
-| TransactionAttested seen | `✓` "Attested" + **View ↗** (green) |
-| Proposed but timed out | `✗` "Failed to attest" + **View ↗** (red) + **Run** |
-| Never proposed | `!` "Failed to submit" (yellow) + **Run** |
-
-### Safenet Q3
-
-Q3 adds a sentinel-review step between submission and validator attestation:
-
-| State | What you see |
-|---|---|
-| Idle | `↻ Safenet Q3` + **Run** button |
+| Idle | `↻ Safenet Aegis` + **Run** button |
 | After clicking Run | **Running...** (disabled) + "Polling..." |
 | TransactionProposed seen | "Submitted" + **View ↗** explorer link |
 | Sentinels reviewing | **Running...** (disabled) + "Sentinels reviewing" (violet) |
 | Sentinels approved | **Running...** (disabled) + "Sentinels approved" |
 | TransactionAttested seen | `✓` "Attested" + **View ↗** (green) |
-| Rejected by sentinels | `✗` "Rejected by sentinels" + **View ↗** (red) + **Run** |
-| Attested but sentinel review never concluded within the poll window | `✗` "Failed to attest" + **View ↗** (red) + **Run** |
-| Never proposed | `!` "Failed to submit" (yellow) + **Run** |
+| Rejected by sentinels | `✗` "Rejected by sentinels" + **View ↗** (red) |
+| Proposed, but no sentinel verdict or attestation within the poll window | `✗` "Failed to attest" + **View ↗** (red) |
+| Relayer accepted the request but no `TransactionProposed` appeared on the configured consensus | `!` "Failed to submit" (yellow) + **Run** |
 
 ## Settings
 
-The popup exposes independent settings for each network:
+The popup has one Safenet Aegis section. **Load testnet defaults** and **Load prod defaults** fill in the form from a preset. Every field can still be edited by hand, and nothing is stored until you click **Save**. A hint shows whether the current values match a preset or are custom. Settings are stored under `safenet-aegis-settings`; when nothing is stored, the testnet preset applies.
 
-- Consensus contract address
-- RPC endpoint (Gnosis Chain for Beta, Ethereum Sepolia for Q3)
-- Relayer URL
-- Sentinel Oracle contract address (Q3 only)
+| Field | Testnet | Prod |
+|---|---|---|
+| Consensus contract | [`0x73b4BDc3112Dfb86085cDD84f26Ab908B20A4A84`](https://gnosisscan.io/address/0x73b4BDc3112Dfb86085cDD84f26Ab908B20A4A84) | [`0xc855761D619f6002923507cE68B84d7689C2aa96`](https://gnosisscan.io/address/0xc855761D619f6002923507cE68B84d7689C2aa96) |
+| Sentinel Oracle contract | [`0xB83c4b66e752D947c1F55fd703b7937e21e401E4`](https://gnosisscan.io/address/0xB83c4b66e752D947c1F55fd703b7937e21e401E4) | [`0x4F61B8832978e83b80D69551AEf07557DBE41d03`](https://gnosisscan.io/address/0x4F61B8832978e83b80D69551AEf07557DBE41d03) |
+| RPC endpoint (Gnosis Chain) | `https://gnosis.gateway.tenderly.co` | same |
+| Relayer URL | `https://safenet-proxy-v2.cc0x.workers.dev/tx` | same |
+| Explorer URL | `https://www.safe.dev/safenet/#/safeTx` | `https://safenet-explorer.eth.limo/#/safeTx` |
+
+Both deployments are on Gnosis Chain. The relayer submits `Consensus.proposeTransaction` from its own wallet, which pays the Sentinel Oracle fee in that deployment's fee token (testnet [`0x3b1cFcfa89A19F6CDf8995ee8AE35D7D585e7025`](https://gnosisscan.io/address/0x3b1cFcfa89A19F6CDf8995ee8AE35D7D585e7025), prod [`0x2a22F9c3b484c3629090FeED35F17Ff8F88f76F0`](https://gnosisscan.io/address/0x2a22F9c3b484c3629090FeED35F17Ff8F88f76F0)). The extension includes `consensus` and `sentinelOracle` in the relayer request body so a relayer can route to the matching deployment.

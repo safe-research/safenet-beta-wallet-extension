@@ -2,11 +2,13 @@ export type ExtensionSettings = {
   consensus: string
   rpc: string
   relayerUrl: string
-  /** Q3-only: the Sentinel Oracle contract address, editable in the popup for Q3. */
-  sentinelOracle?: string
+  /** The Sentinel Oracle contract used for the sentinel-review status step. */
+  sentinelOracle: string
+  /** Safenet explorer safeTx page; `chainId` and `safeTxHash` are appended as query params. */
+  explorerUrl: string
 }
 
-export type NetworkId = 'beta' | 'q3'
+export type NetworkId = 'aegis'
 
 export type NetworkUiIds = {
   container: string
@@ -24,13 +26,7 @@ export type NetworkConfig = {
   /** The chain the consensus contract itself lives on -- not necessarily the chain of the Safe
    *  being tracked (a single consensus deployment attests transactions for Safes on any chain). */
   settlementChainId: bigint
-  consensusDeploymentBlock: `0x${string}`
-  explorerBaseUrl: string
   ui: NetworkUiIds
-  /** Q3-only: the Sentinel Oracle contract used for the sentinel-review status step. */
-  sentinelOracleAddress?: `0x${string}`
-  /** Q3-only: fromBlock used when scanning the Sentinel Oracle's own logs. */
-  sentinelOracleDeploymentBlock?: `0x${string}`
 }
 
 export type SafeTransactionPayload = {
@@ -58,7 +54,7 @@ export type ProposalLookupResult = {
   txHash?: `0x${string}`
 }
 
-/** Q3-only: outcome of the Sentinel Oracle's commit/reveal review for a proposed transaction. */
+/** Outcome of the Sentinel Oracle's commit/reveal review for a proposed transaction. */
 export type SentinelResult = {
   concluded: boolean
   approved?: boolean

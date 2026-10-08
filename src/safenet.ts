@@ -1,31 +1,5 @@
-import {
-  createPublicClient,
-  decodeEventLog,
-  getAddress,
-  hashTypedData,
-  http,
-  isAddress,
-  pad,
-  parseAbiItem,
-  type Hex,
-} from 'viem'
-import { CONSENSUS_DEPLOYMENT_BLOCK } from './constants'
-import type { ExtensionSettings, ProposalLookupResult, SafeTransactionPayload } from './types'
-
-type LookupProposalDeps = {
-  createClient?: typeof createPublicClient
-  decodeLog?: typeof decodeEventLog
-  normalizeAddress?: typeof getAddress
-  padAddress?: typeof pad
-}
-
-const transactionProposedEvent = parseAbiItem(
-  'event TransactionProposed(bytes32 indexed safeTxHash, uint256 indexed chainId, address indexed safe, uint64 epoch, (uint256 chainId, address safe, address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, uint256 nonce) transaction)',
-)
-
-const transactionAttestedEvent = parseAbiItem(
-  'event TransactionAttested(bytes32 indexed safeTxHash, uint256 indexed chainId, address indexed safe, uint64 epoch, bytes32 signatureId, ((uint256 x, uint256 y) r, uint256 z) attestation)',
-)
+import { getAddress, hashTypedData, isAddress } from 'viem'
+import type { ExtensionSettings, SafeTransactionPayload } from './types'
 
 export function isModuleTransaction(payload: SafeTransactionPayload) {
   return payload.operation !== 0 && payload.operation !== 1
@@ -67,81 +41,6 @@ export function computeSafeTxHash(payload: SafeTransactionPayload): `0x${string}
   })
 }
 
-export function explorerUrl(chainId: bigint, safeTxHash: `0x${string}`) {
-  const params = new URLSearchParams({ chainId: chainId.toString(), safeTxHash })
-  return `https://explorer.safenet-beta.eth.limo/#/safeTx?${params.toString()}`
-}
-
-export async function lookupProposal(
-  settings: ExtensionSettings,
-  safeTxHash: `0x${string}`,
-  chainId: bigint,
-  safe?: `0x${string}`,
-  deps: LookupProposalDeps = {},
-): Promise<ProposalLookupResult> {
-  const createClient = deps.createClient ?? createPublicClient
-  const decodeLog = deps.decodeLog ?? decodeEventLog
-  const normalizeAddress = deps.normalizeAddress ?? getAddress
-  const padAddress = deps.padAddress ?? pad
-
-  const client = createClient({ transport: http(settings.rpc) })
-  const topics = [null, safeTxHash, null, safe ? padAddress(safe) : null] as (Hex | null)[]
-
-  const rawLogs = await client.request({
-    method: 'eth_getLogs',
-    params: [
-      {
-        address: normalizeAddress(settings.consensus),
-        fromBlock: CONSENSUS_DEPLOYMENT_BLOCK,
-        toBlock: 'latest',
-        topics,
-      },
-    ],
-  })
-
-  let proposed = false
-  let attested = false
-  let txHash: `0x${string}` | undefined
-
-  for (const log of rawLogs as Array<{ data: Hex; topics: [Hex, ...Hex[]]; transactionHash: `0x${string}` }>) {
-    try {
-      const proposedDecoded = decodeLog({
-        abi: [transactionProposedEvent],
-        data: log.data,
-        topics: log.topics,
-      })
-      if (proposedDecoded.eventName === 'TransactionProposed') {
-        proposed = true
-        txHash = txHash ?? log.transactionHash
-      }
-      continue
-    } catch {
-      // not a TransactionProposed log; try next ABI
-    }
-
-    try {
-      const attestedDecoded = decodeLog({
-        abi: [transactionAttestedEvent],
-        data: log.data,
-        topics: log.topics,
-      })
-      if (attestedDecoded.eventName === 'TransactionAttested') {
-        attested = true
-        txHash = log.transactionHash // prefer the attestation tx hash
-      }
-    } catch {
-      // not a TransactionAttested log; skip
-    }
-  }
-
-  return {
-    exists: proposed || attested,
-    attested,
-    txHash,
-    explorerUrl: proposed || attested ? explorerUrl(chainId, safeTxHash) : undefined,
-  }
-}
-
 export async function loadSafeTransactionFromService(chainId: bigint, safeTxHash: `0x${string}`) {
   const url = `https://safe-client.safe.global/v1/chains/${chainId.toString()}/transactions/${safeTxHash}`
   const response = await fetch(url)
@@ -172,7 +71,9 @@ export async function loadSafeTransactionFromService(chainId: bigint, safeTxHash
   } satisfies SafeTransactionPayload
 }
 
-/** Returns the relayer's raw response body (e.g. it may echo back the submission tx hash), or
+/** `consensus`/`sentinelOracle` are sent alongside the Safe tx so the relayer can route to the
+ *  matching Aegis deployment (testnet or prod); relayers that don't need them ignore them.
+ *  Returns the relayer's raw response body (e.g. it may echo back the submission tx hash), or
  *  null if the body can't be read -- purely a best-effort diagnostic for callers to log. */
 export async function submitProposal(
   settings: ExtensionSettings,
@@ -183,6 +84,8 @@ export async function submitProposal(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
+      consensus: settings.consensus,
+      sentinelOracle: settings.sentinelOracle,
       chainId: payload.chainId.toString(),
       safe: payload.safe,
       to: payload.to,

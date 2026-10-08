@@ -12,7 +12,7 @@ export default defineConfig({
     lib: {
       entry: resolve(__dirname, 'src/content.ts'),
       formats: ['iife'],
-      name: 'SafenetBetaContent',
+      name: 'SafenetAegisContent',
       fileName: () => 'content.js',
     },
   },

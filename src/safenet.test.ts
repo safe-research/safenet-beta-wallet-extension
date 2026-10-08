@@ -1,12 +1,17 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { computeSafeTxHash, explorerUrl, isModuleTransaction, loadSafeTransactionFromService, lookupProposal, submitProposal } from './safenet'
-import { CONSENSUS_DEPLOYMENT_BLOCK, DEFAULT_SETTINGS } from './constants'
+import { computeSafeTxHash, isModuleTransaction, loadSafeTransactionFromService, submitProposal } from './safenet'
+import { AEGIS_PROD_SETTINGS, AEGIS_TESTNET_SETTINGS } from './constants'
 import { settingsSchema } from './schema'
 
 describe('settings schema', () => {
-  it('accepts default settings', () => {
-    const parsed = settingsSchema.parse(DEFAULT_SETTINGS)
-    expect(parsed.consensus).toBe(DEFAULT_SETTINGS.consensus)
+  it.each([AEGIS_TESTNET_SETTINGS, AEGIS_PROD_SETTINGS])('accepts preset settings', (preset) => {
+    const parsed = settingsSchema.parse(preset)
+    expect(parsed).toEqual(preset)
+  })
+
+  it('rejects settings without a sentinel oracle or explorer URL', () => {
+    expect(() => settingsSchema.parse({ ...AEGIS_TESTNET_SETTINGS, sentinelOracle: undefined })).toThrow()
+    expect(() => settingsSchema.parse({ ...AEGIS_TESTNET_SETTINGS, explorerUrl: undefined })).toThrow()
   })
 })
 
@@ -71,10 +76,10 @@ describe('submitProposal', () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => '' })
     vi.stubGlobal('fetch', fetchMock)
 
-    await submitProposal(DEFAULT_SETTINGS, payload)
+    await submitProposal(AEGIS_TESTNET_SETTINGS, payload)
 
     expect(fetchMock).toHaveBeenCalledWith(
-      DEFAULT_SETTINGS.relayerUrl,
+      AEGIS_TESTNET_SETTINGS.relayerUrl,
       expect.objectContaining({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -85,7 +90,7 @@ describe('submitProposal', () => {
   it('returns the relayer response body for callers to log', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, text: async () => '{"txHash":"0xabc"}' }))
 
-    const result = await submitProposal(DEFAULT_SETTINGS, payload)
+    const result = await submitProposal(AEGIS_TESTNET_SETTINGS, payload)
 
     expect(result).toBe('{"txHash":"0xabc"}')
   })
@@ -93,15 +98,24 @@ describe('submitProposal', () => {
   it('returns null when the response body cannot be read', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, text: async () => { throw new Error('boom') } }))
 
-    const result = await submitProposal(DEFAULT_SETTINGS, payload)
+    const result = await submitProposal(AEGIS_TESTNET_SETTINGS, payload)
 
     expect(result).toBeNull()
   })
 
-  it('builds explorer links for a safe tx hash', () => {
-    expect(explorerUrl(1n, ('0x' + '1'.repeat(64)) as `0x${string}`)).toBe(
-      'https://explorer.safenet-beta.eth.limo/#/safeTx?chainId=1&safeTxHash=0x1111111111111111111111111111111111111111111111111111111111111111',
-    )
+  it('sends the consensus and sentinel oracle so the relayer can route to the deployment', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => '' })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await submitProposal(AEGIS_PROD_SETTINGS, payload)
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body).toMatchObject({
+      consensus: AEGIS_PROD_SETTINGS.consensus,
+      sentinelOracle: AEGIS_PROD_SETTINGS.sentinelOracle,
+      safe: payload.safe,
+      nonce: '7',
+    })
   })
 })
 
@@ -199,93 +213,5 @@ describe('loadSafeTransactionFromService', () => {
     expect(result!.operation).toBe(1)
     expect(result!.data).toBe('0xabcd')
     expect(result!.nonce).toBe(3n)
-  })
-})
-
-
-describe('lookupProposal', () => {
-  const makeClient = (logs: Array<{ data: `0x${string}`; topics: [`0x${string}`, ...`0x${string}`[]] }>) =>
-    ({ request: vi.fn().mockResolvedValue(logs) })
-
-  it('returns no proposal when no logs are found', async () => {
-    const result = await lookupProposal(
-      DEFAULT_SETTINGS,
-      ('0x' + 'a'.repeat(64)) as `0x${string}`,
-      100n,
-      '0x1111111111111111111111111111111111111111',
-      {
-        createClient: () => makeClient([]) as never,
-      },
-    )
-
-    expect(result).toEqual({ exists: false, attested: false, explorerUrl: undefined })
-  })
-
-  it('uses the consensus deployment block in eth_getLogs', async () => {
-    const request = vi.fn().mockResolvedValue([])
-
-    await lookupProposal(
-      DEFAULT_SETTINGS,
-      ('0x' + 'b'.repeat(64)) as `0x${string}`,
-      100n,
-      '0x1111111111111111111111111111111111111111',
-      {
-        createClient: () => ({ request }) as never,
-      },
-    )
-
-    expect(request).toHaveBeenCalledWith({
-      method: 'eth_getLogs',
-      params: [
-        expect.objectContaining({
-          fromBlock: CONSENSUS_DEPLOYMENT_BLOCK,
-          toBlock: 'latest',
-        }),
-      ],
-    })
-  })
-
-  it('returns proposed=true attested=false when only a proposal log decodes', async () => {
-    const decodeLog = vi
-      .fn()
-      .mockReturnValueOnce({ eventName: 'TransactionProposed' })
-
-    const result = await lookupProposal(
-      DEFAULT_SETTINGS,
-      ('0x' + 'c'.repeat(64)) as `0x${string}`,
-      100n,
-      '0x1111111111111111111111111111111111111111',
-      {
-        createClient: () => makeClient([{ data: '0x1234', topics: ['0xaaa'] as [`0x${string}`, ...`0x${string}`[]] }]) as never,
-        decodeLog: decodeLog as never,
-      },
-    )
-
-    expect(result.exists).toBe(true)
-    expect(result.attested).toBe(false)
-    expect(result.explorerUrl).toContain('safeTxHash=0x' + 'c'.repeat(64))
-  })
-
-  it('returns attested=true when an attestation log decodes after proposal decode fails', async () => {
-    const decodeLog = vi
-      .fn()
-      .mockImplementationOnce(() => {
-        throw new Error('not proposed')
-      })
-      .mockReturnValueOnce({ eventName: 'TransactionAttested' })
-
-    const result = await lookupProposal(
-      DEFAULT_SETTINGS,
-      ('0x' + 'd'.repeat(64)) as `0x${string}`,
-      100n,
-      '0x1111111111111111111111111111111111111111',
-      {
-        createClient: () => makeClient([{ data: '0x1234', topics: ['0xbbb'] as [`0x${string}`, ...`0x${string}`[]] }]) as never,
-        decodeLog: decodeLog as never,
-      },
-    )
-
-    expect(result.exists).toBe(true)
-    expect(result.attested).toBe(true)
   })
 })

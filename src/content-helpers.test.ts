@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Q3_NETWORK, UI_IDS } from './constants'
+import { AEGIS_NETWORK, AEGIS_UI_IDS as UI_IDS } from './constants'
 import {
   ensureUi,
   getChainIdFromUrl,
@@ -159,51 +159,12 @@ describe('ensureUi', () => {
     expect(document.getElementById(UI_IDS.container)).toBeNull()
   })
 
-  it('creates a Q3-labeled, Q3-IDed widget distinct from Beta\'s', () => {
+  it('labels the widget as Safenet Aegis', () => {
     document.body.innerHTML = ''
 
-    const container = ensureUi(document, Q3_NETWORK)
+    const container = ensureUi(document, AEGIS_NETWORK)
 
-    expect(container.id).toBe(Q3_NETWORK.ui.container)
-    expect(document.getElementById(Q3_NETWORK.ui.button)?.textContent).toBe('Run')
-    expect(document.querySelector(`#${Q3_NETWORK.ui.container} span`)?.textContent).not.toBe('Safenet Beta')
-  })
-
-  it('mounts Q3 directly below Beta when Beta mounts first', () => {
-    document.body.innerHTML = `
-      <section>
-        <div data-testid="safe-shield-widget">Safe Shield</div>
-      </section>
-    `
-
-    const beta = ensureUi(document)
-    const q3 = ensureUi(document, Q3_NETWORK)
-
-    expect(beta.nextElementSibling).toBe(q3)
-  })
-
-  it('mounts Q3 directly below Beta even when Q3 mounts first', () => {
-    document.body.innerHTML = `
-      <section>
-        <div data-testid="safe-shield-widget">Safe Shield</div>
-      </section>
-    `
-
-    ensureUi(document, Q3_NETWORK)
-    const beta = ensureUi(document)
-    const q3 = document.getElementById(Q3_NETWORK.ui.container)
-
-    expect(beta.nextElementSibling).toBe(q3)
-  })
-
-  it('removes only the targeted network\'s container', () => {
-    document.body.innerHTML = ''
-    ensureUi(document)
-    ensureUi(document, Q3_NETWORK)
-
-    removeUi(document, Q3_NETWORK)
-
-    expect(document.getElementById(UI_IDS.container)).not.toBeNull()
-    expect(document.getElementById(Q3_NETWORK.ui.container)).toBeNull()
+    expect(container.id).toBe(AEGIS_NETWORK.ui.container)
+    expect(container.textContent).toContain('Safenet Aegis')
   })
 })

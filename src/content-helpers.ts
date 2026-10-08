@@ -1,5 +1,5 @@
 import { getAddress, isAddress } from 'viem'
-import { BETA_NETWORK, NETWORKS } from './constants'
+import { AEGIS_NETWORK, NETWORKS } from './constants'
 import type { NetworkConfig, SafeTransactionPayload } from './types'
 
 const CHAIN_PREFIX_MAP: Record<string, bigint> = {
@@ -266,17 +266,17 @@ function mountUi(container: HTMLElement, documentRef: Document, precedingContain
   container.style.minWidth = '300px'
 }
 
-export function removeUi(documentRef: Document, network: NetworkConfig = BETA_NETWORK) {
+export function removeUi(documentRef: Document, network: NetworkConfig = AEGIS_NETWORK) {
   documentRef.getElementById(network.ui.container)?.remove()
 }
 
-/** The container each network's widget mounts directly below, per NETWORKS' order (Beta first). */
+/** The container each network's widget mounts directly below, per NETWORKS' order. */
 function precedingContainerId(network: NetworkConfig): string | undefined {
   const index = NETWORKS.findIndex((n) => n.id === network.id)
   return index > 0 ? NETWORKS[index - 1].ui.container : undefined
 }
 
-export function ensureUi(documentRef: Document, network: NetworkConfig = BETA_NETWORK) {
+export function ensureUi(documentRef: Document, network: NetworkConfig = AEGIS_NETWORK) {
   let container = documentRef.getElementById(network.ui.container) as HTMLDivElement | null
   if (!container) {
     container = documentRef.createElement('div')

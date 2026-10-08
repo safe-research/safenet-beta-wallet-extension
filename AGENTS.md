@@ -2,7 +2,7 @@
 
 ## Repo purpose
 
-This repository contains the Safenet Beta Wallet Extension, a browser extension that adds Safenet Beta and Safenet Q3 checks into Safe Wallet transaction flows. The two networks run independent, ABI-incompatible contract deployments (Beta on Gnosis Chain, Q3 on Ethereum Sepolia) and are surfaced as two separate, independently-driven widgets that can appear on the same review screen.
+This repository contains the Safenet Aegis Wallet Extension, a browser extension that adds Safenet Aegis checks into Safe Wallet transaction flows. Safenet Aegis runs on Gnosis Chain with two deployments (testnet and prod), selectable as presets in the popup. (Safenet Beta was shut down and removed; the former "Safenet Q3" Sepolia deployment became Aegis.)
 
 ## Developer workflow
 
@@ -14,20 +14,19 @@ This repository contains the Safenet Beta Wallet Extension, a browser extension 
 
 ## Important implementation notes
 
-- SafeTxHash logic must stay aligned with each network's Safenet explorer and consensus contract behavior.
+- SafeTxHash logic must stay aligned with the Safenet explorer and consensus contract behavior.
 - Proposal lookup always runs first (check consensus logs by SafeTxHash); only submit via relayer if not yet proposed.
-- Each network gets its own widget, mounted as an inline row below the SafeShield widget (Q3 stacks directly below Beta), not a floating overlay. Widgets only render on review/confirm screens detected via `[data-testid="continue-sign-btn"]` and `[data-testid="sign-btn"]` — not on the new-transaction form.
-- Draft transaction data is extracted from the React fiber tree via `page-bridge.js` (injected into page context) and via direct fiber walking from known anchor elements. This resolution is shared — done once per check, then used by both networks' independent lookups.
-- The `NetworkConfig`/`NETWORKS` abstraction (`src/constants.ts`, `src/types.ts`) holds everything that varies per network: storage key, default settings, consensus deployment block, explorer base URL, and widget DOM ids. Settings are stored under separate keys (`safenet-beta-settings`, `safenet-q3-settings`) via `getSettings(networkId)`/`setSettings(settings, networkId)` in `storage.ts`.
-- Q3's Consensus contract is a newer, ABI-incompatible deployment from Beta's — different indexed event params (a packed `safeId` instead of separate `chainId`/`safe` topics). Q3-specific event parsing and lookups live in `src/safenet-q3.ts`, separate from Beta's `src/safenet.ts` (left untouched).
-- The Sentinel Oracle address is a user-editable Q3 setting (`ExtensionSettings.sentinelOracle`), not a hardcoded constant — `getSentinelRequestId`/`checkOracleResult` in `safenet-q3.ts` read `settings.sentinelOracle`, falling back to the `Q3_SENTINEL_ORACLE` constant only if unset. Beta has no equivalent field.
-- Beta status flow: Polling → Submitted (once TransactionProposed seen on-chain) → Attested (green) or Failed to attest (red, with explorer link) or Failed to submit (yellow, retriable).
-- Q3 status flow adds a sentinel-review step before attestation: Polling → Submitted → Sentinels reviewing (violet) → Sentinels approved → Attested (green) **or** Rejected by sentinels (red, terminal) **or** Failed to attest (red) **or** Failed to submit (yellow). The sentinel conclusion is correlated to a safeTxHash by reading the `NewRequest` event's `requestId` off the same transaction receipt that emitted `TransactionProposed` (not by recomputing Consensus's internal EIP-712-style hash), then polling the Sentinel Oracle contract for `OracleResult` with that `requestId`.
-- `pollForAttestationQ3` in `content.ts` runs two sequential, independently-timed poll phases: up to 120s waiting for the sentinels to reach a verdict, then — only once approved — up to an additional 120s waiting for the validator attestation. Either phase timing out (or a sentinel denial) surfaces as "Failed to attest" / "Rejected by sentinels" respectively; a denial short-circuits immediately rather than waiting out its phase's full timeout.
-- Beta explorer URL: `https://explorer.safenet-beta.eth.limo/#/safeTx?chainId=...&safeTxHash=...`
-- Q3 explorer URL: `https://www.safe.dev/safenet/#/safeTx?chainId=...&safeTxHash=...`
+- The widget is mounted as an inline row below the SafeShield widget, not a floating overlay. It only renders on review/confirm screens detected via `[data-testid="continue-sign-btn"]` and `[data-testid="sign-btn"]` — not on the new-transaction form.
+- Draft transaction data is extracted from the React fiber tree via `page-bridge.js` (injected into page context) and via direct fiber walking from known anchor elements. The `safenet-beta-*` page-bridge message ids are shared with `public/page-bridge.js` — keep both in sync if renaming.
+- `src/constants.ts` holds `AEGIS_TESTNET_SETTINGS`/`AEGIS_PROD_SETTINGS` (`AEGIS_PRESETS`), `AEGIS_NETWORK` (storage key `safenet-aegis-settings`, widget DOM ids, settlement chain 100), and `AEGIS_LOGS_FROM_BLOCK` — the earliest of the four Aegis deployment blocks, used as `fromBlock` for every consensus/oracle `eth_getLogs` so it covers both presets. The `NETWORKS` array/`NetworkConfig` abstraction is kept with a single entry.
+- Every per-deployment value is a user-editable setting (`ExtensionSettings`: `consensus`, `sentinelOracle`, `rpc`, `relayerUrl`, `explorerUrl`); nothing in `src/safenet-aegis.ts` hardcodes an address or explorer. Presets only fill the popup form; the user still clicks Save.
+- `src/safenet.ts` holds network-agnostic helpers (`computeSafeTxHash`, `isModuleTransaction`, `loadSafeTransactionFromService`, `submitProposal`); Aegis event parsing and lookups live in `src/safenet-aegis.ts`. `submitProposal` also sends `consensus` and `sentinelOracle` so a relayer can route to the matching deployment.
+- The Aegis `NewRequest` event includes `uint24 daoFeeShare` (see `safenet/contracts/src/libraries/SentinelOracleRequests.sol`). If the ABI drifts, `getSentinelRequestId` silently returns null and the sentinel step never shows.
+- Status flow: Polling → Submitted → Sentinels reviewing (violet) → Sentinels approved → Attested (green) **or** Rejected by sentinels (red, terminal) **or** Failed to attest (red) **or** Failed to submit (yellow, retriable — the relayer accepted the request but no `TransactionProposed` appeared on the configured consensus, e.g. relayer targeting a different deployment). The sentinel conclusion is correlated to a safeTxHash by reading the `NewRequest` event's `requestId` off the same transaction receipt that emitted `TransactionProposed` (not by recomputing Consensus's internal EIP-712-style hash), then polling the Sentinel Oracle contract for `OracleResult` with that `requestId`.
+- `pollForAttestationAegis` in `content.ts` runs two sequential, independently-timed poll phases: up to 120s waiting for the sentinels to reach a verdict, then — only once approved — up to an additional 120s waiting for the validator attestation. A denial short-circuits immediately.
+- Explorer URLs: testnet `https://www.safe.dev/safenet/#/safeTx?chainId=...&safeTxHash=...`, prod `https://safenet-explorer.eth.limo/#/safeTx?chainId=...&safeTxHash=...`.
 - Supported transaction scope: any Safe transaction except module transactions (operation != 0 and != 1).
-- Configuration (consensus address, RPC, relayer URL, and — Q3 only — Sentinel Oracle address) for both networks lives in the popup, not a separate options surface — each network has its own independent settings section and Save action.
+- Configuration lives in the popup, not a separate options surface.
 
 ## When editing this repo
 
