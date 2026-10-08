@@ -68,7 +68,7 @@ describe('submitProposal', () => {
   }
 
   it('posts the transaction payload to the relayer', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true })
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => '' })
     vi.stubGlobal('fetch', fetchMock)
 
     await submitProposal(DEFAULT_SETTINGS, payload)
@@ -80,6 +80,22 @@ describe('submitProposal', () => {
         headers: { 'Content-Type': 'application/json' },
       }),
     )
+  })
+
+  it('returns the relayer response body for callers to log', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, text: async () => '{"txHash":"0xabc"}' }))
+
+    const result = await submitProposal(DEFAULT_SETTINGS, payload)
+
+    expect(result).toBe('{"txHash":"0xabc"}')
+  })
+
+  it('returns null when the response body cannot be read', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, text: async () => { throw new Error('boom') } }))
+
+    const result = await submitProposal(DEFAULT_SETTINGS, payload)
+
+    expect(result).toBeNull()
   })
 
   it('builds explorer links for a safe tx hash', () => {

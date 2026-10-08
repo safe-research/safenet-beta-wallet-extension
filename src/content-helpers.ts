@@ -1,6 +1,6 @@
 import { getAddress, isAddress } from 'viem'
-import { UI_IDS } from './constants'
-import type { SafeTransactionPayload } from './types'
+import { BETA_NETWORK, NETWORKS } from './constants'
+import type { NetworkConfig, SafeTransactionPayload } from './types'
 
 const CHAIN_PREFIX_MAP: Record<string, bigint> = {
   eth: 1n,
@@ -217,7 +217,23 @@ function getUiAnchor(documentRef: Document): Element | null {
   return null
 }
 
-function mountUi(container: HTMLElement, documentRef: Document) {
+function mountUi(container: HTMLElement, documentRef: Document, precedingContainerId?: string) {
+  const precedingContainer = precedingContainerId ? documentRef.getElementById(precedingContainerId) : null
+  if (precedingContainer?.parentElement) {
+    if (precedingContainer.nextElementSibling !== container) {
+      precedingContainer.insertAdjacentElement('afterend', container)
+    }
+
+    container.style.position = 'relative'
+    container.style.right = 'auto'
+    container.style.bottom = 'auto'
+    container.style.zIndex = '1'
+    container.style.marginTop = '16px'
+    container.style.width = '100%'
+    container.style.minWidth = '0'
+    return
+  }
+
   const anchor = getUiAnchor(documentRef)
   if (anchor?.parentElement) {
     const host = anchor.matches('[data-testid="safe-shield-widget"]')
@@ -250,19 +266,25 @@ function mountUi(container: HTMLElement, documentRef: Document) {
   container.style.minWidth = '300px'
 }
 
-export function removeUi(documentRef: Document) {
-  documentRef.getElementById(UI_IDS.container)?.remove()
+export function removeUi(documentRef: Document, network: NetworkConfig = BETA_NETWORK) {
+  documentRef.getElementById(network.ui.container)?.remove()
 }
 
-export function ensureUi(documentRef: Document) {
-  let container = documentRef.getElementById(UI_IDS.container) as HTMLDivElement | null
+/** The container each network's widget mounts directly below, per NETWORKS' order (Beta first). */
+function precedingContainerId(network: NetworkConfig): string | undefined {
+  const index = NETWORKS.findIndex((n) => n.id === network.id)
+  return index > 0 ? NETWORKS[index - 1].ui.container : undefined
+}
+
+export function ensureUi(documentRef: Document, network: NetworkConfig = BETA_NETWORK) {
+  let container = documentRef.getElementById(network.ui.container) as HTMLDivElement | null
   if (!container) {
     container = documentRef.createElement('div')
-    container.id = UI_IDS.container
+    container.id = network.ui.container
     container.style.boxSizing = 'border-box'
     container.style.display = 'flex'
-    container.style.alignItems = 'center'
-    container.style.gap = '10px'
+    container.style.flexDirection = 'column'
+    container.style.gap = '6px'
     container.style.padding = '10px 16px'
     container.style.background = '#1C1C1C'
     container.style.color = '#ffffff'
@@ -271,8 +293,13 @@ export function ensureUi(documentRef: Document) {
     container.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.5)'
     container.style.fontFamily = "'DM Sans', Inter, system-ui, sans-serif"
 
+    const row = documentRef.createElement('div')
+    row.style.display = 'flex'
+    row.style.alignItems = 'center'
+    row.style.gap = '10px'
+
     const icon = documentRef.createElement('span')
-    icon.id = UI_IDS.icon
+    icon.id = network.ui.icon
     icon.textContent = '↻'
     icon.style.fontSize = '16px'
     icon.style.lineHeight = '1'
@@ -280,19 +307,19 @@ export function ensureUi(documentRef: Document) {
     icon.style.flexShrink = '0'
 
     const label = documentRef.createElement('span')
-    label.textContent = 'Safenet Beta'
+    label.textContent = network.label
     label.style.fontWeight = '700'
     label.style.fontSize = '14px'
     label.style.color = '#ffffff'
     label.style.flex = '1'
 
     const status = documentRef.createElement('span')
-    status.id = UI_IDS.status
+    status.id = network.ui.status
     status.style.fontSize = '13px'
     status.style.color = 'rgba(255, 255, 255, 0.6)'
 
     const button = documentRef.createElement('button')
-    button.id = UI_IDS.button
+    button.id = network.ui.button
     button.textContent = 'Run'
     button.style.flexShrink = '0'
     button.style.padding = '4px 10px'
@@ -305,9 +332,30 @@ export function ensureUi(documentRef: Document) {
     button.style.fontSize = '13px'
     button.style.fontFamily = 'inherit'
 
-    container.append(icon, label, status, button)
+    row.append(icon, label, status, button)
+
+    // Fills over a known duration while a timed poll is in flight (see startProgress/stopProgress
+    // in content.ts); hidden the rest of the time. Purely a visual estimate of time-to-timeout --
+    // the actual result (attested/rejected/concluded) always short-circuits it, whether or not it
+    // has visually finished filling.
+    const progressTrack = documentRef.createElement('div')
+    progressTrack.id = network.ui.progress
+    progressTrack.style.display = 'none'
+    progressTrack.style.height = '3px'
+    progressTrack.style.width = '100%'
+    progressTrack.style.borderRadius = '2px'
+    progressTrack.style.background = 'rgba(255, 255, 255, 0.08)'
+    progressTrack.style.overflow = 'hidden'
+
+    const progressFill = documentRef.createElement('div')
+    progressFill.style.height = '100%'
+    progressFill.style.width = '0%'
+    progressFill.style.background = 'rgba(255, 255, 255, 0.45)'
+    progressTrack.appendChild(progressFill)
+
+    container.append(row, progressTrack)
   }
 
-  mountUi(container, documentRef)
+  mountUi(container, documentRef, precedingContainerId(network))
   return container
 }

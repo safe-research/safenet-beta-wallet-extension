@@ -1,15 +1,15 @@
 import browser from 'webextension-polyfill'
-import { DEFAULT_SETTINGS } from './constants'
+import { NETWORKS_BY_ID } from './constants'
 import { settingsSchema } from './schema'
-import type { ExtensionSettings } from './types'
+import type { ExtensionSettings, NetworkId } from './types'
 
-const KEY = 'safenet-beta-settings'
-
-export async function getSettings(): Promise<ExtensionSettings> {
-  const stored = await browser.storage.local.get(KEY)
-  return settingsSchema.parse({ ...DEFAULT_SETTINGS, ...(stored[KEY] ?? {}) })
+export async function getSettings(networkId: NetworkId = 'beta'): Promise<ExtensionSettings> {
+  const { storageKey, defaultSettings } = NETWORKS_BY_ID[networkId]
+  const stored = await browser.storage.local.get(storageKey)
+  return settingsSchema.parse({ ...defaultSettings, ...(stored[storageKey] ?? {}) })
 }
 
-export async function setSettings(settings: ExtensionSettings): Promise<void> {
-  await browser.storage.local.set({ [KEY]: settingsSchema.parse(settings) })
+export async function setSettings(settings: ExtensionSettings, networkId: NetworkId = 'beta'): Promise<void> {
+  const { storageKey } = NETWORKS_BY_ID[networkId]
+  await browser.storage.local.set({ [storageKey]: settingsSchema.parse(settings) })
 }
