@@ -1,6 +1,6 @@
 # Devcontainer
 
-This devcontainer is intended for building and iterating on the Safenet Beta Wallet Extension inside VS Code.
+This devcontainer is intended for building and iterating on the Safenet Aegis Wallet Extension inside VS Code.
 
 ## What it does
 

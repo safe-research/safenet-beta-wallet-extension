@@ -1,6 +1,6 @@
 # Test Case Reference
 
-**58 automated tests across 4 files:** [`src/safenet.test.ts`](../src/safenet.test.ts) (18 tests, Safenet Beta), [`src/safenet-q3.test.ts`](../src/safenet-q3.test.ts) (13 tests, Safenet Q3), [`src/content-helpers.test.ts`](../src/content-helpers.test.ts) (18 tests), [`src/storage.test.ts`](../src/storage.test.ts) (9 tests). The automated suite covers core transaction hashing, relayer calls, on-chain lookups (for both networks' ABIs), URL/DOM parsing, dual-widget mounting, and per-network settings persistence. End-to-end browser behaviour and interactions with the live Safe Wallet UI require manual QA - see the "Not covered / manual QA" notes throughout.
+**68 automated tests across 4 files:** [`src/safenet.test.ts`](../src/safenet.test.ts) (19 tests, shared tx helpers), [`src/safenet-aegis.test.ts`](../src/safenet-aegis.test.ts) (18 tests, Safenet Aegis), [`src/content-helpers.test.ts`](../src/content-helpers.test.ts) (25 tests), [`src/storage.test.ts`](../src/storage.test.ts) (6 tests). The automated suite covers core transaction hashing, relayer calls, Aegis on-chain lookups, URL/DOM parsing, widget mounting (review screens and the tx details page), and settings persistence. End-to-end browser behaviour and interactions with the live Safe Wallet UI require manual QA - see the "Not covered / manual QA" notes throughout.
 
 This document covers all automated test cases in the project. It is intended for:
 - **QA engineers** who want to understand what is already covered and what requires manual verification
@@ -12,15 +12,16 @@ Tests are written with [Vitest](https://vitest.dev/) and live alongside source f
 
 ## Module: `safenet.ts`
 
-Core logic for hashing Safe transactions, submitting them to the Safenet relayer, and reading attestation state from the consensus contract on Gnosis Chain.
+Shared logic for hashing Safe transactions, loading them from the Safe client service, and submitting them to the Safenet relayer.
 
 ---
 
-### `settings schema` (1 test)
+### `settings schema` (3 tests)
 
-Validates that the Zod schema used for extension settings accepts the built-in default values without throwing.
+Validates the Zod schema used for extension settings.
 
-- Default settings (hardcoded in `constants.ts`) parse successfully through the schema.
+- Both built-in presets (`AEGIS_TESTNET_SETTINGS`, `AEGIS_PROD_SETTINGS` in `constants.ts`) parse successfully and unchanged.
+- Settings missing `sentinelOracle` or `explorerUrl` are rejected (both are required).
 
 **Not covered / manual QA:** Schema rejection of invalid field combinations (e.g., mismatched chain and RPC). Covered for individual fields in `storage.test.ts`.
 
@@ -39,21 +40,15 @@ Produces an EIP-712 typed-data hash for a Safe transaction. The hash is used as 
 
 ---
 
-### `submitProposal` (1 test)
+### `submitProposal` (4 tests)
 
 Verifies the extension calls the relayer with the correct payload when proposing a transaction.
 
 - Confirms the extension sends the transaction to the configured `relayerUrl` with the right HTTP method and content type, ensuring the relayer receives exactly what it needs to process the proposal.
+- Returns the relayer's response body for logging, or `null` if the body can't be read.
+- Sends the configured `consensus` and `sentinelOracle` addresses alongside the Safe tx fields, so a relayer can route to the matching Aegis deployment (testnet or prod).
 
 **Not covered / manual QA:** Relayer error responses (4xx/5xx); network failures; serialisation of BigInt fields in the JSON body.
-
----
-
-### `explorerUrl` (1 test)
-
-Builds a URL pointing to the Safenet explorer for a given chain and safe tx hash.
-
-- Produces the correct explorer URL format: `https://explorer.safenet-beta.eth.limo/#/safeTx?chainId=<id>&safeTxHash=<hash>`.
 
 ---
 
@@ -69,7 +64,7 @@ Identifies whether a transaction is a module-initiated transaction based on the 
 
 ---
 
-### `loadSafeTransactionFromService` (4 tests)
+### `loadSafeTransactionFromService` (5 tests)
 
 Fetches a Safe transaction from the Safe Transaction Service REST API and normalises it into the internal `SafeTransactionPayload` shape (with BigInt fields for numeric values).
 
@@ -77,44 +72,34 @@ Fetches a Safe transaction from the Safe Transaction Service REST API and normal
 - Returns `null` when required fields (`to`, `value`, `nonce`, etc.) are missing from the response body.
 - Parses the **flat response format**: all transaction fields are top-level properties on the response object (`to`, `value`, `data`, `operation`, ...). Numeric string fields are converted to `BigInt`.
 - Parses the **nested txInfo/txData response format**: transaction fields are split between a `txInfo` object (contains `safeAddress`) and a `txData` object (contains `to.value`, `dataHex`, `value`, etc.). This is the shape returned by the newer Safe Transaction Service `/transactions` endpoint.
+- Parses the **current client-gateway shape**, using a trimmed real response (fixture `src/test/fixtures/safe-client-multisig-tx.json`). Here `to`/`value`/`operation`/`hexData` are in `txData`, and `nonce`, the gas fields, `gasToken` and `refundReceiver` (`{ value }`) are in `detailedExecutionInfo`. The parsed payload must recompute to the response's `safeTxHash`.
 
 **Not covered / manual QA:** Partial responses where only some nested fields exist; network timeouts; non-JSON response bodies; chains other than Sepolia (1n) and Gnosis Chain (100n).
 
 ---
 
-### `lookupProposal` (4 tests)
+## Module: `safenet-aegis.ts`
 
-Queries Gnosis Chain for `TransactionProposed` and `TransactionAttested` events emitted by the consensus contract, given a `safeTxHash`.
+Safenet Aegis logic: reading proposal/attestation state from the Aegis Consensus contract on Gnosis Chain, plus correlating a proposed transaction to its Sentinel Oracle review outcome. All addresses, the RPC and the explorer base come from the user's settings (testnet or prod preset, or custom).
+
+---
+
+### `explorerUrlAegis` (3 tests)
+
+Builds a Safenet explorer URL for a given chain and safe tx hash from `settings.explorerUrl`.
+
+- Testnet preset: `https://www.safe.dev/safenet/#/safeTx?chainId=<id>&safeTxHash=<hash>`.
+- Prod preset: `https://safenet-explorer.eth.limo/#/safeTx?chainId=<id>&safeTxHash=<hash>`.
+- A user-edited explorer URL is used as-is as the base.
+
+---
+
+### `lookupProposalAegis` (4 tests)
+
+Queries Gnosis Chain for `TransactionProposed` and `TransactionAttested` events emitted by the configured Aegis consensus contract, given a `safeTxHash`.
 
 - Returns `{ exists: false, attested: false, explorerUrl: undefined }` when no matching logs are found on-chain.
-- Passes `fromBlock: CONSENSUS_DEPLOYMENT_BLOCK` to `eth_getLogs` so the query always starts from the block the consensus contract was deployed (avoids scanning the entire chain history).
-- Returns `exists: true, attested: false` when a log decodes as `TransactionProposed` but no attestation log is present. Also includes an `explorerUrl` containing the safe tx hash.
-- Returns `attested: true` when a log decodes as `TransactionAttested` (even if decoding as `TransactionProposed` throws first - the decoder tries both event signatures per log).
-
-**Not covered / manual QA:** RPC connection failures; logs from unrelated contracts leaking through the filter; a transaction that has both proposal and attestation logs present at the same time; very large log sets.
-
----
-
-## Module: `safenet-q3.ts`
-
-Q3-specific logic mirroring `safenet.ts`, but against the newer, ABI-incompatible Q3 Consensus contract on Ethereum Sepolia, plus correlating a proposed transaction to its Sentinel Oracle review outcome.
-
----
-
-### `explorerUrlQ3` (1 test)
-
-Builds a URL pointing to the Q3 Safenet explorer for a given chain and safe tx hash.
-
-- Produces the correct explorer URL format: `https://www.safe.dev/safenet/#/safeTx?chainId=<id>&safeTxHash=<hash>`.
-
----
-
-### `lookupProposalQ3` (4 tests)
-
-Queries Ethereum Sepolia for `TransactionProposed` and `TransactionAttested` events emitted by the Q3 consensus contract, given a `safeTxHash`.
-
-- Returns `{ exists: false, attested: false, explorerUrl: undefined }` when no matching logs are found on-chain.
-- Filters `eth_getLogs` on `topics: [null, safeTxHash]` only, with no third topic — unlike Beta's ABI, Q3's indexed `safeId`/`oracle` params are intentionally not filtered on, since `safeTxHash` alone is already a unique 32-byte hash.
+- Filters `eth_getLogs` on `topics: [null, safeTxHash]` only, with no third topic — the indexed `safeId`/`oracle` params are intentionally not filtered on, since `safeTxHash` alone is already a unique 32-byte hash.
 - Returns `exists: true, attested: false` when a log decodes as `TransactionProposed` but no attestation log is present.
 - Returns `attested: true` when a log decodes as `TransactionAttested` (even if decoding as `TransactionProposed` throws first).
 
@@ -122,25 +107,28 @@ Queries Ethereum Sepolia for `TransactionProposed` and `TransactionAttested` eve
 
 ---
 
-### `getSentinelRequestId` (3 tests)
+### `getSentinelRequestId` (6 tests)
 
 Reads the Sentinel Oracle's `requestId` off the same transaction receipt that emitted `TransactionProposed`, by finding the `NewRequest` log emitted by the Sentinel Oracle's address in that receipt — this avoids reimplementing Consensus's internal EIP-712-style `requestId` hash client-side.
 
 - Returns `null` when the transaction has no receipt.
 - Returns `null` when no log in the receipt decodes as `NewRequest`, and ignores a `NewRequest`-shaped log emitted by an address other than the configured Sentinel Oracle.
 - Returns the `requestId` from a `NewRequest` log at the Sentinel Oracle's address.
+- Uses the `sentinelOracle` address from settings (a log at the preset address is ignored once a custom address is configured).
+- Decodes a real ABI-encoded `NewRequest` log including the `uint24 daoFeeShare` field (regression guard: the pre-Aegis ABI lacked it, so the sentinel step silently never showed).
 
 **Not covered / manual QA:** A receipt containing multiple `NewRequest` logs (e.g., from other in-flight requests) — the current implementation returns the first match.
 
 ---
 
-### `checkOracleResult` (4 tests)
+### `checkOracleResult` (5 tests)
 
 Polls the Sentinel Oracle for an `OracleResult` event matching a given `requestId`, to determine whether sentinels have approved or denied a proposed transaction.
 
 - Returns `{ concluded: false }` when no matching logs are found (sentinels haven't concluded yet — could still be committing/revealing, disputed, or timed out without ever emitting a result).
-- Passes `fromBlock: Q3_SENTINEL_ORACLE_DEPLOYMENT_BLOCK` and filters `topics: [null, requestId]`.
+- Passes `fromBlock: AEGIS_LOGS_FROM_BLOCK` and filters `topics: [null, requestId]`.
 - Returns `{ concluded: true, approved: true }` / `{ concluded: true, approved: false }` on an approving/denying `OracleResult`.
+- Queries the `sentinelOracle` address from settings.
 
 **Not covered / manual QA:** A disputed request that later resolves via arbitration (`DisputeResolved`) rather than emitting a fresh `OracleResult`; a request that times out without any sentinels ever committing.
 
@@ -204,39 +192,53 @@ Determines whether the DOM currently shows the Safe transaction review/sign step
 
 ---
 
-### `ensureUi` and `removeUi` (7 tests)
+### `isTxDetailsPage` / `isWidgetScreen` (5 tests)
 
-Manages the extension's status widgets in the DOM. `ensureUi` takes a `NetworkConfig` (defaulting to Beta) and creates that network's widget on first call, returning it on subsequent calls without duplicating it. `removeUi` removes only the targeted network's widget.
+Detects the transaction details page (`/transactions/tx?id=multisig_<safe>_<safeTxHash>`), where the widget is also shown.
+
+- Returns `true` when the URL is a details page with a safeTxHash and either `[data-testid="reject-btn"]` (queued tx) or the audit log `[data-testid="transaction-actions-list"]` (executed tx) has rendered. `isWidgetScreen` is `true` there too.
+- Returns `false` while the details haven't rendered yet.
+- Returns `false` on the queue list, even though expanded rows render the same buttons.
+- Returns `false` when the `id` param has no safeTxHash.
+
+**Not covered / manual QA:** The real Safe Wallet details page. The DOM in the tests mirrors `TxDetails`/`TxSigners` in safe-wallet-monorepo; verify placement visually after Safe Wallet updates.
+
+---
+
+### `ensureUi` and `removeUi` (4 tests)
+
+Manages the extension's status widget in the DOM. `ensureUi` takes a `NetworkConfig` (defaulting to Aegis) and creates the widget on first call, returning it on subsequent calls without duplicating it. `removeUi` removes it.
 
 - Calling `ensureUi` twice returns the exact same DOM element and leaves only one widget in the document. The widget contains a "Run" button, a `↻` icon element, and an empty status element.
 - When the Safe Shield widget (`[data-testid="safe-shield-widget"]`) is present, the extension widget is inserted immediately after it (as the next sibling) and given `position: relative` styling.
 - `removeUi` removes the widget from the DOM so that `getElementById` returns `null` afterwards.
-- Calling `ensureUi` with the Q3 network config creates a distinctly-labeled, distinctly-IDed widget from Beta's.
-- Mounting order is stable regardless of call order: Q3's widget always ends up directly below Beta's — whether Beta mounts first (Q3 anchors after Beta's existing container) or Q3 mounts first (Q3 falls back to the raw anchor since Beta's container doesn't exist yet, then Beta's own mount inserts itself directly after the anchor, pushing Q3 below it).
-- `removeUi(document, Q3_NETWORK)` removes only Q3's container, leaving Beta's intact.
+- The widget is labeled "Safenet Aegis" and uses the `safenet-aegis-check-*` element ids.
 
-**Not covered / manual QA:** Widget behaviour when Safe Shield widget is removed from the DOM after the extension widget has been mounted; accessibility of the widget (keyboard navigation, screen readers); visual appearance and CSS; three or more stacked networks (only two are currently defined).
+### `ensureUi on the tx details page` (5 tests)
+
+- Mounts directly above the Confirm/Reject row, inside the same column. The row is found as the nearest ancestor of `reject-btn` with 2+ buttons, since each button is wrapped in a `data-track` element.
+- Stays in place on repeated calls; there is never more than one widget.
+- When Reject is the only action, mounts directly above Reject's wrapper rather than above the whole column.
+- With no actions (executed tx), mounts below the audit log.
+- When the signing modal opens, moves below its Safe Shield widget. When the modal closes and unmounts it, it's recreated above the Confirm/Reject row.
+
+**Not covered / manual QA:** Widget behaviour when Safe Shield widget is removed from the DOM after the extension widget has been mounted; accessibility of the widget (keyboard navigation, screen readers); visual appearance and CSS.
 
 ---
 
 ## Module: `storage.ts`
 
-Reads and writes extension settings using `browser.storage.local`. Settings are validated through the Zod schema on both read and write. `getSettings(networkId)`/`setSettings(settings, networkId)` default `networkId` to `'beta'`, resolving the storage key and defaults for that network from `NETWORKS_BY_ID`.
+Reads and writes extension settings using `browser.storage.local`. Settings are validated through the Zod schema on both read and write. `getSettings(networkId)`/`setSettings(settings, networkId)` default `networkId` to `'aegis'`, resolving the storage key and defaults for that network from `NETWORKS_BY_ID`.
 
 ---
 
-### `storage helpers` (5 tests, Beta / default network)
+### `storage helpers` (6 tests)
 
-- **Stored value wins on merge:** When `browser.storage.local` contains valid settings with a custom `rpc` URL, `getSettings()` returns that custom URL rather than the default.
-- **Falls back to defaults when empty:** When storage returns an empty object, `getSettings()` returns the built-in `DEFAULT_SETTINGS` values for all fields.
+- **Stored value wins on merge:** When `browser.storage.local` contains valid settings under `safenet-aegis-settings` with a custom `rpc` URL, `getSettings()` returns that custom URL rather than the default.
+- **Falls back to testnet defaults when empty:** When storage returns an empty object, `getSettings()` returns `AEGIS_TESTNET_SETTINGS` for all fields.
+- **Ignores the old `safenet-q3-settings` key:** stale Sepolia settings from the Q3 era never override the Aegis defaults.
 - **Validates on save:** Calling `setSettings()` with valid settings triggers exactly one `browser.storage.local.set` call.
 - **Throws on invalid save:** Calling `setSettings()` with a `consensus` field that is not a valid Ethereum address throws an error and does not persist to storage.
 - **Throws on corrupt stored data:** If the stored `rpc` field is not a valid URL (e.g., the value `"not-a-url"`), `getSettings()` throws rather than silently returning garbage data.
-
-### `storage helpers > q3 network` (4 tests)
-
-- **Reads/writes under the `safenet-q3-settings` key:** `getSettings('q3')`/`setSettings(settings, 'q3')` read from and write to a storage key entirely separate from Beta's.
-- **Falls back to `Q3_DEFAULT_SETTINGS`** (not Beta's defaults) when storage is empty for the `q3` key.
-- **Saving Q3 settings never touches the `safenet-beta-settings` key** — verified by inspecting the actual object passed to `browser.storage.local.set`.
 
 **Not covered / manual QA:** Concurrent read/write races; storage quota exceeded errors; behaviour when `browser.storage.local` itself throws (e.g., in a restricted extension context); migration of settings from older extension versions with a different schema shape.

@@ -1,31 +1,5 @@
-import {
-  createPublicClient,
-  decodeEventLog,
-  getAddress,
-  hashTypedData,
-  http,
-  isAddress,
-  pad,
-  parseAbiItem,
-  type Hex,
-} from 'viem'
-import { CONSENSUS_DEPLOYMENT_BLOCK } from './constants'
-import type { ExtensionSettings, ProposalLookupResult, SafeTransactionPayload } from './types'
-
-type LookupProposalDeps = {
-  createClient?: typeof createPublicClient
-  decodeLog?: typeof decodeEventLog
-  normalizeAddress?: typeof getAddress
-  padAddress?: typeof pad
-}
-
-const transactionProposedEvent = parseAbiItem(
-  'event TransactionProposed(bytes32 indexed safeTxHash, uint256 indexed chainId, address indexed safe, uint64 epoch, (uint256 chainId, address safe, address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, uint256 nonce) transaction)',
-)
-
-const transactionAttestedEvent = parseAbiItem(
-  'event TransactionAttested(bytes32 indexed safeTxHash, uint256 indexed chainId, address indexed safe, uint64 epoch, bytes32 signatureId, ((uint256 x, uint256 y) r, uint256 z) attestation)',
-)
+import { getAddress, hashTypedData, isAddress } from 'viem'
+import type { ExtensionSettings, SafeTransactionPayload } from './types'
 
 export function isModuleTransaction(payload: SafeTransactionPayload) {
   return payload.operation !== 0 && payload.operation !== 1
@@ -67,112 +41,58 @@ export function computeSafeTxHash(payload: SafeTransactionPayload): `0x${string}
   })
 }
 
-export function explorerUrl(chainId: bigint, safeTxHash: `0x${string}`) {
-  const params = new URLSearchParams({ chainId: chainId.toString(), safeTxHash })
-  return `https://explorer.safenet-beta.eth.limo/#/safeTx?${params.toString()}`
+type AddressLike = string | { value?: string } | null | undefined
+
+function addressValue(value: AddressLike): string | undefined {
+  return typeof value === 'string' ? value : value?.value
 }
 
-export async function lookupProposal(
-  settings: ExtensionSettings,
-  safeTxHash: `0x${string}`,
-  chainId: bigint,
-  safe?: `0x${string}`,
-  deps: LookupProposalDeps = {},
-): Promise<ProposalLookupResult> {
-  const createClient = deps.createClient ?? createPublicClient
-  const decodeLog = deps.decodeLog ?? decodeEventLog
-  const normalizeAddress = deps.normalizeAddress ?? getAddress
-  const padAddress = deps.padAddress ?? pad
-
-  const client = createClient({ transport: http(settings.rpc) })
-  const topics = [null, safeTxHash, null, safe ? padAddress(safe) : null] as (Hex | null)[]
-
-  const rawLogs = await client.request({
-    method: 'eth_getLogs',
-    params: [
-      {
-        address: normalizeAddress(settings.consensus),
-        fromBlock: CONSENSUS_DEPLOYMENT_BLOCK,
-        toBlock: 'latest',
-        topics,
-      },
-    ],
-  })
-
-  let proposed = false
-  let attested = false
-  let txHash: `0x${string}` | undefined
-
-  for (const log of rawLogs as Array<{ data: Hex; topics: [Hex, ...Hex[]]; transactionHash: `0x${string}` }>) {
-    try {
-      const proposedDecoded = decodeLog({
-        abi: [transactionProposedEvent],
-        data: log.data,
-        topics: log.topics,
-      })
-      if (proposedDecoded.eventName === 'TransactionProposed') {
-        proposed = true
-        txHash = txHash ?? log.transactionHash
-      }
-      continue
-    } catch {
-      // not a TransactionProposed log; try next ABI
-    }
-
-    try {
-      const attestedDecoded = decodeLog({
-        abi: [transactionAttestedEvent],
-        data: log.data,
-        topics: log.topics,
-      })
-      if (attestedDecoded.eventName === 'TransactionAttested') {
-        attested = true
-        txHash = log.transactionHash // prefer the attestation tx hash
-      }
-    } catch {
-      // not a TransactionAttested log; skip
-    }
-  }
-
-  return {
-    exists: proposed || attested,
-    attested,
-    txHash,
-    explorerUrl: proposed || attested ? explorerUrl(chainId, safeTxHash) : undefined,
-  }
+function firstDefined<T>(...values: (T | null | undefined)[]): T | undefined {
+  return values.find((value): value is T => value !== undefined && value !== null)
 }
 
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+
+/** Loads a multisig tx from the Safe client gateway. The current response splits the SafeTx fields:
+ *  `to`/`value`/`operation`/`hexData` live in `txData`, while `nonce`, the gas fields, `gasToken` and
+ *  `refundReceiver` (as `{ value }`) live in `detailedExecutionInfo`. Older flat and txInfo/txData
+ *  shapes are still accepted. */
 export async function loadSafeTransactionFromService(chainId: bigint, safeTxHash: `0x${string}`) {
   const url = `https://safe-client.safe.global/v1/chains/${chainId.toString()}/transactions/${safeTxHash}`
   const response = await fetch(url)
   if (!response.ok) return null
   const json = await response.json()
-  const tx = json?.txInfo ?? json
-  const detailed = json?.txData ?? json?.detailedExecutionInfo ?? json
-  const safeAddress = tx?.safeAddress ?? json?.safeAddress
-  const toValue = detailed?.to?.value ?? detailed?.to ?? json?.to
-  const data = detailed?.dataHex ?? detailed?.data ?? json?.data ?? '0x'
-  const value = detailed?.value ?? json?.value ?? '0'
-  const nonce = detailed?.nonce ?? json?.nonce
-  if (!safeAddress || !toValue || nonce == null) return null
+  const txData = json?.txData ?? {}
+  const execution = json?.detailedExecutionInfo ?? {}
+
+  const safeAddress = firstDefined<string>(json?.safeAddress, json?.txInfo?.safeAddress)
+  const to = addressValue(firstDefined<AddressLike>(txData.to, json?.to))
+  const nonce = firstDefined<string | number>(execution.nonce, txData.nonce, json?.nonce)
+  if (!safeAddress || !to || nonce == null) return null
+
+  const field = (key: string) => firstDefined<string | number>(execution[key], txData[key], json?.[key])
+  const addressField = (key: string) =>
+    addressValue(firstDefined<AddressLike>(execution[key], txData[key], json?.[key])) ?? ZERO_ADDRESS
 
   return {
     chainId,
     safe: getAddress(safeAddress),
-    to: getAddress(typeof toValue === 'string' ? toValue : toValue.value),
-    value: BigInt(value),
-    data: data || '0x',
-    operation: Number(detailed?.operation ?? json?.operation ?? 0) as 0 | 1,
-    safeTxGas: BigInt(detailed?.safeTxGas ?? json?.safeTxGas ?? 0),
-    baseGas: BigInt(detailed?.baseGas ?? json?.baseGas ?? 0),
-    gasPrice: BigInt(detailed?.gasPrice ?? json?.gasPrice ?? 0),
-    gasToken: getAddress(detailed?.gasToken ?? json?.gasToken ?? '0x0000000000000000000000000000000000000000'),
-    refundReceiver: getAddress(detailed?.refundReceiver ?? json?.refundReceiver ?? '0x0000000000000000000000000000000000000000'),
+    to: getAddress(to),
+    value: BigInt(firstDefined<string | number>(txData.value, json?.value) ?? 0),
+    data: firstDefined<`0x${string}`>(txData.hexData, txData.dataHex, txData.data, json?.data) || '0x',
+    operation: Number(firstDefined<number>(txData.operation, json?.operation) ?? 0) as 0 | 1,
+    safeTxGas: BigInt(field('safeTxGas') ?? 0),
+    baseGas: BigInt(field('baseGas') ?? 0),
+    gasPrice: BigInt(field('gasPrice') ?? 0),
+    gasToken: getAddress(addressField('gasToken')),
+    refundReceiver: getAddress(addressField('refundReceiver')),
     nonce: BigInt(nonce),
   } satisfies SafeTransactionPayload
 }
 
-/** Returns the relayer's raw response body (e.g. it may echo back the submission tx hash), or
+/** `consensus`/`sentinelOracle` are sent alongside the Safe tx so the relayer can route to the
+ *  matching Aegis deployment (testnet or prod); relayers that don't need them ignore them.
+ *  Returns the relayer's raw response body (e.g. it may echo back the submission tx hash), or
  *  null if the body can't be read -- purely a best-effort diagnostic for callers to log. */
 export async function submitProposal(
   settings: ExtensionSettings,
@@ -183,6 +103,8 @@ export async function submitProposal(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
+      consensus: settings.consensus,
+      sentinelOracle: settings.sentinelOracle,
       chainId: payload.chainId.toString(),
       safe: payload.safe,
       to: payload.to,

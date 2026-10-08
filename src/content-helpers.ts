@@ -1,5 +1,5 @@
 import { getAddress, isAddress } from 'viem'
-import { BETA_NETWORK, NETWORKS } from './constants'
+import { AEGIS_NETWORK, NETWORKS } from './constants'
 import type { NetworkConfig, SafeTransactionPayload } from './types'
 
 const CHAIN_PREFIX_MAP: Record<string, bigint> = {
@@ -40,6 +40,11 @@ const UI_ANCHOR_SELECTORS = [
   '[data-testid="safe-shield-widget"]',
   ...REVIEW_ACTION_SELECTORS,
 ]
+// Tx details page (/transactions/tx?id=multisig_<safe>_<safeTxHash>): the right-hand column holds
+// the audit log and, for queued txs, a row with Confirm/Execute + Reject. Only Reject has a test id;
+// each button is wrapped in a Track element, so the row is the nearest ancestor with 2+ buttons.
+const TX_DETAILS_REJECT_SELECTOR = '[data-testid="reject-btn"]'
+const TX_DETAILS_AUDIT_LOG_SELECTOR = '[data-testid="transaction-actions-list"]'
 
 type ReactFiberNode = {
   return?: ReactFiberNode | null
@@ -209,6 +214,68 @@ export function isReviewScreen(documentRef: Document): boolean {
   return documentRef.querySelector(REVIEW_ACTION_SELECTORS.join(', ')) !== null
 }
 
+export function isTxDetailsPage(documentRef: Document, urlString: string): boolean {
+  let pathname: string
+  try {
+    pathname = new URL(urlString).pathname
+  } catch {
+    return false
+  }
+  if (!pathname.replace(/\/+$/, '').endsWith('/transactions/tx')) return false
+  if (!getCurrentSafeTxHashFromUrl(urlString)) return false
+  return documentRef.querySelector(`${TX_DETAILS_REJECT_SELECTOR}, ${TX_DETAILS_AUDIT_LOG_SELECTOR}`) !== null
+}
+
+/** Whether the widget should be shown: a review/confirm step, or a multisig tx details page. */
+export function isWidgetScreen(documentRef: Document, urlString: string): boolean {
+  return isReviewScreen(documentRef) || isTxDetailsPage(documentRef, urlString)
+}
+
+function getTxDetailsActionRow(documentRef: Document): Element | null {
+  const reject = documentRef.querySelector(TX_DETAILS_REJECT_SELECTOR)
+  if (!reject) return null
+  let element = reject.parentElement
+  while (element && element !== documentRef.body) {
+    // Reached the whole column (Reject is the only action, e.g. an expired swap): sit right above Reject.
+    if (element.querySelector(TX_DETAILS_AUDIT_LOG_SELECTOR)) break
+    if (element.querySelectorAll('button').length > 1) return element
+    element = element.parentElement
+  }
+  return reject.closest('[data-track]') ?? reject
+}
+
+function setInlineStyles(container: HTMLElement) {
+  container.style.position = 'relative'
+  container.style.right = 'auto'
+  container.style.bottom = 'auto'
+  container.style.zIndex = '1'
+  container.style.width = '100%'
+  container.style.minWidth = '0'
+}
+
+/** Mounts on the tx details page: above the Confirm/Reject row, else below the audit log. */
+function mountOnTxDetails(container: HTMLElement, documentRef: Document): boolean {
+  const actionRow = getTxDetailsActionRow(documentRef)
+  if (actionRow?.parentElement) {
+    if (actionRow.previousElementSibling !== container) actionRow.insertAdjacentElement('beforebegin', container)
+    setInlineStyles(container)
+    container.style.marginTop = '0'
+    container.style.marginBottom = '16px'
+    return true
+  }
+
+  const auditLog = documentRef.querySelector(TX_DETAILS_AUDIT_LOG_SELECTOR)
+  if (auditLog?.parentElement) {
+    if (auditLog.nextElementSibling !== container) auditLog.insertAdjacentElement('afterend', container)
+    setInlineStyles(container)
+    container.style.marginTop = '16px'
+    container.style.marginBottom = '0'
+    return true
+  }
+
+  return false
+}
+
 function getUiAnchor(documentRef: Document): Element | null {
   for (const selector of UI_ANCHOR_SELECTORS) {
     const element = documentRef.querySelector(selector)
@@ -224,17 +291,16 @@ function mountUi(container: HTMLElement, documentRef: Document, precedingContain
       precedingContainer.insertAdjacentElement('afterend', container)
     }
 
-    container.style.position = 'relative'
-    container.style.right = 'auto'
-    container.style.bottom = 'auto'
-    container.style.zIndex = '1'
+    setInlineStyles(container)
     container.style.marginTop = '16px'
-    container.style.width = '100%'
-    container.style.minWidth = '0'
+    container.style.marginBottom = '0'
     return
   }
 
+  // Review/confirm anchors win: opening Confirm from the tx details page moves the widget into the
+  // signing modal, and it moves back once the modal closes.
   const anchor = getUiAnchor(documentRef)
+  if (!anchor && mountOnTxDetails(container, documentRef)) return
   if (anchor?.parentElement) {
     const host = anchor.matches('[data-testid="safe-shield-widget"]')
       ? anchor
@@ -246,13 +312,9 @@ function mountUi(container: HTMLElement, documentRef: Document, precedingContain
       host.insertAdjacentElement('afterend', container)
     }
 
-    container.style.position = 'relative'
-    container.style.right = 'auto'
-    container.style.bottom = 'auto'
-    container.style.zIndex = '1'
+    setInlineStyles(container)
     container.style.marginTop = '16px'
-    container.style.width = '100%'
-    container.style.minWidth = '0'
+    container.style.marginBottom = '0'
     return
   }
 
@@ -262,21 +324,22 @@ function mountUi(container: HTMLElement, documentRef: Document, precedingContain
   container.style.bottom = '16px'
   container.style.zIndex = '999999'
   container.style.marginTop = '0'
+  container.style.marginBottom = '0'
   container.style.width = 'min(360px, calc(100vw - 32px))'
   container.style.minWidth = '300px'
 }
 
-export function removeUi(documentRef: Document, network: NetworkConfig = BETA_NETWORK) {
+export function removeUi(documentRef: Document, network: NetworkConfig = AEGIS_NETWORK) {
   documentRef.getElementById(network.ui.container)?.remove()
 }
 
-/** The container each network's widget mounts directly below, per NETWORKS' order (Beta first). */
+/** The container each network's widget mounts directly below, per NETWORKS' order. */
 function precedingContainerId(network: NetworkConfig): string | undefined {
   const index = NETWORKS.findIndex((n) => n.id === network.id)
   return index > 0 ? NETWORKS[index - 1].ui.container : undefined
 }
 
-export function ensureUi(documentRef: Document, network: NetworkConfig = BETA_NETWORK) {
+export function ensureUi(documentRef: Document, network: NetworkConfig = AEGIS_NETWORK) {
   let container = documentRef.getElementById(network.ui.container) as HTMLDivElement | null
   if (!container) {
     container = documentRef.createElement('div')

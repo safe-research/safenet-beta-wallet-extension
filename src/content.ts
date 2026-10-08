@@ -2,30 +2,28 @@
 console.log("[Safenet] content script loaded");
 
 import browser from "webextension-polyfill";
-import { BETA_NETWORK, NETWORKS, Q3_NETWORK } from "./constants";
+import { AEGIS_NETWORK, NETWORKS } from "./constants";
 import {
   ensureUi,
   getChainIdFromUrl,
   getCurrentSafeTxHashFromUrl,
   getDraftTransactionFromPage,
-  isReviewScreen,
+  isWidgetScreen,
   normalizeDraftTransactionData,
   removeUi,
 } from "./content-helpers";
 import {
   computeSafeTxHash,
-  explorerUrl,
   isModuleTransaction,
   loadSafeTransactionFromService,
-  lookupProposal,
   submitProposal,
 } from "./safenet";
 import {
   checkOracleResult,
-  explorerUrlQ3,
+  explorerUrlAegis,
   getSentinelRequestId,
-  lookupProposalQ3,
-} from "./safenet-q3";
+  lookupProposalAegis,
+} from "./safenet-aegis";
 import { blockExplorerTxUrl } from "./block-explorer";
 import { getSettings } from "./storage";
 import type {
@@ -160,11 +158,14 @@ async function resolveTransaction(): Promise<{
   if (urlHash) {
     log("Loading tx from Safe service:", urlHash);
     const payload = await loadSafeTransactionFromService(chainId, urlHash);
-    if (payload) {
+    // Never submit a payload that doesn't hash to the tx being viewed -- the relayer would propose
+    // a different transaction and the lookup by urlHash would never find it.
+    if (payload && computeSafeTxHash(payload).toLowerCase() === urlHash.toLowerCase()) {
       log("Tx loaded:", payload);
       return { payload, safeTxHash: urlHash };
     }
-    log("Safe service returned null for hash:", urlHash);
+    if (payload) logErr("Safe service tx does not hash to", urlHash, payload);
+    else log("Safe service returned null for hash:", urlHash);
   }
 
   const draftPayload =
@@ -198,7 +199,7 @@ async function waitForTransaction(
 }
 
 function ensurePageUi(network: NetworkConfig) {
-  if (!isReviewScreen(document)) {
+  if (!isWidgetScreen(document, window.location.href)) {
     removeUi(document, network);
     return null;
   }
@@ -336,47 +337,10 @@ function stopProgress(network: NetworkConfig) {
   if (track) track.style.display = "none";
 }
 
-async function pollForAttestation(
-  logger: NetworkLogger,
-  network: NetworkConfig,
-  settings: ExtensionSettings,
-  safeTxHash: `0x${string}`,
-  chainId: bigint,
-  safe: `0x${string}`,
-  /** Called once, the first time a settlement-chain tx hash is seen in the logs. */
-  onFirstTxHash?: (txHash: `0x${string}`) => void,
-  maxWait = 60000,
-  interval = 4000,
-): Promise<ProposalLookupResult> {
-  const deadline = Date.now() + maxWait;
-  startProgress(network, maxWait);
-  let last: ProposalLookupResult = { exists: false, attested: false };
-  let txHashReported = false;
-  while (Date.now() < deadline) {
-    await new Promise<void>((r) => setTimeout(r, interval));
-    logger.log(txHashReported ? "Polling for attestation..." : "Polling for proposal...");
-    last = await lookupProposal(settings, safeTxHash, chainId, safe);
-    logger.log("Lookup result:", last);
-    if (last.txHash && !txHashReported) {
-      txHashReported = true;
-      const link = blockExplorerTxUrl(BETA_NETWORK.settlementChainId, last.txHash);
-      logger.log("Settlement chain tx:", last.txHash, link ?? "");
-      onFirstTxHash?.(last.txHash);
-    }
-    if (last.attested) {
-      stopProgress(network);
-      return last;
-    }
-  }
-  stopProgress(network);
-  logger.log("Attestation poll timed out");
-  return last;
-}
-
-/** Q3-only: the sentinel-review conclusion, reported alongside the ongoing attestation poll. */
+/** The sentinel-review conclusion, reported alongside the ongoing attestation poll. */
 type SentinelStatus = "reviewing" | "approved" | "rejected";
 
-async function pollForAttestationQ3(
+async function pollForAttestationAegis(
   logger: NetworkLogger,
   network: NetworkConfig,
   settings: ExtensionSettings,
@@ -405,7 +369,7 @@ async function pollForAttestationQ3(
   while (Date.now() < sentinelDeadline) {
     await new Promise<void>((r) => setTimeout(r, interval));
     logger.log(txHashReported ? "Polling for sentinel verdict..." : "Polling for proposal...");
-    last = await lookupProposalQ3(settings, safeTxHash, chainId);
+    last = await lookupProposalAegis(settings, safeTxHash, chainId);
     logger.log("Lookup result:", last);
 
     if (last.txHash && !proposalTxHash && !last.attested) {
@@ -413,7 +377,7 @@ async function pollForAttestationQ3(
     }
     if (last.txHash && !txHashReported) {
       txHashReported = true;
-      const link = blockExplorerTxUrl(Q3_NETWORK.settlementChainId, last.txHash);
+      const link = blockExplorerTxUrl(AEGIS_NETWORK.settlementChainId, last.txHash);
       logger.log("Settlement chain tx:", last.txHash, link ?? "");
       onFirstTxHash?.(last.txHash);
     }
@@ -455,7 +419,7 @@ async function pollForAttestationQ3(
   while (Date.now() < attestationDeadline) {
     await new Promise<void>((r) => setTimeout(r, interval));
     logger.log("Polling for attestation...");
-    last = await lookupProposalQ3(settings, safeTxHash, chainId);
+    last = await lookupProposalAegis(settings, safeTxHash, chainId);
     logger.log("Lookup result:", last);
     if (last.attested) {
       stopProgress(network);
@@ -467,84 +431,14 @@ async function pollForAttestationQ3(
   return { ...last, rejected: false };
 }
 
-async function runBetaCheck(
+async function runAegisCheck(
   logger: NetworkLogger,
   network: NetworkConfig,
   settings: ExtensionSettings,
   payload: SafeTransactionPayload,
   safeTxHash: `0x${string}`,
 ) {
-  const explorer = explorerUrl(payload.chainId, safeTxHash);
-  logger.log("Resolved tx:", { safeTxHash, explorer, payload });
-
-  logger.log("Looking up existing proposal for", safeTxHash);
-  const existing = await lookupProposal(settings, safeTxHash, payload.chainId, payload.safe);
-  logger.log("Existing proposal:", existing);
-  if (existing.txHash) {
-    const link = blockExplorerTxUrl(network.settlementChainId, existing.txHash);
-    logger.log("Settlement chain tx:", existing.txHash, link ?? "");
-  }
-
-  if (existing.attested) {
-    setStatus(network, "passed", "Attested", existing.explorerUrl ?? explorer);
-    return;
-  }
-  if (existing.exists) {
-    // TransactionProposed already on-chain — show "Submitted" with explorer link.
-    setStatus(network, "loading", "Submitted", existing.txHash ? explorer : undefined);
-    const result = await pollForAttestation(
-      logger,
-      network,
-      settings,
-      safeTxHash,
-      payload.chainId,
-      payload.safe,
-      () => setStatus(network, "loading", "Submitted", explorer),
-    );
-    if (result.attested) {
-      setStatus(network, "passed", "Attested", result.explorerUrl ?? explorer);
-    } else {
-      setStatus(network, "failed", "Failed to attest", result.explorerUrl ?? explorer);
-    }
-    return;
-  }
-
-  // No proposal found — submit via relayer, then poll.
-  logger.log("Safe tx data used for submit:", payload);
-  logger.log("Safe tx hash used for submit:", safeTxHash);
-  logger.log("Submitting proposal via relayer:", settings.relayerUrl);
-  const relayerResponse = await submitProposal(settings, payload);
-  logger.log("Proposal submitted via relayer", relayerResponse ? { relayerResponse } : "");
-  // No explorer link yet — only added via onFirstTxHash once TransactionProposed is seen.
-  setStatus(network, "loading", "Polling...");
-  const afterSubmit = await pollForAttestation(
-    logger,
-    network,
-    settings,
-    safeTxHash,
-    payload.chainId,
-    payload.safe,
-    () => setStatus(network, "loading", "Submitted", explorer),
-  );
-  if (afterSubmit.attested) {
-    setStatus(network, "passed", "Attested", afterSubmit.explorerUrl ?? explorer);
-  } else if (afterSubmit.txHash) {
-    // TransactionProposed was seen on-chain, but attestation timed out
-    setStatus(network, "failed", "Failed to attest", afterSubmit.explorerUrl ?? explorer);
-  } else {
-    // Relayer submitted but TransactionProposed never appeared on-chain
-    setStatus(network, "warning", "Failed to submit");
-  }
-}
-
-async function runQ3Check(
-  logger: NetworkLogger,
-  network: NetworkConfig,
-  settings: ExtensionSettings,
-  payload: SafeTransactionPayload,
-  safeTxHash: `0x${string}`,
-) {
-  const explorer = explorerUrlQ3(payload.chainId, safeTxHash);
+  const explorer = explorerUrlAegis(settings, payload.chainId, safeTxHash);
   logger.log("Resolved tx:", { safeTxHash, explorer, payload });
 
   const onFirstTxHash = () => setStatus(network, "loading", "Submitted", explorer);
@@ -555,7 +449,7 @@ async function runQ3Check(
   };
 
   logger.log("Looking up existing proposal for", safeTxHash);
-  const existing = await lookupProposalQ3(settings, safeTxHash, payload.chainId);
+  const existing = await lookupProposalAegis(settings, safeTxHash, payload.chainId);
   logger.log("Existing proposal:", existing);
   if (existing.txHash) {
     const link = blockExplorerTxUrl(network.settlementChainId, existing.txHash);
@@ -568,7 +462,7 @@ async function runQ3Check(
   }
   if (existing.exists) {
     setStatus(network, "loading", "Submitted", existing.txHash ? explorer : undefined);
-    const result = await pollForAttestationQ3(logger, network, settings, safeTxHash, payload.chainId, onFirstTxHash, onSentinelStatus);
+    const result = await pollForAttestationAegis(logger, network, settings, safeTxHash, payload.chainId, onFirstTxHash, onSentinelStatus);
     if (result.attested) {
       setStatus(network, "passed", "Attested", result.explorerUrl ?? explorer);
     } else if (result.rejected) {
@@ -585,7 +479,7 @@ async function runQ3Check(
   const relayerResponse = await submitProposal(settings, payload);
   logger.log("Proposal submitted via relayer", relayerResponse ? { relayerResponse } : "");
   setStatus(network, "loading", "Polling...");
-  const afterSubmit = await pollForAttestationQ3(logger, network, settings, safeTxHash, payload.chainId, onFirstTxHash, onSentinelStatus);
+  const afterSubmit = await pollForAttestationAegis(logger, network, settings, safeTxHash, payload.chainId, onFirstTxHash, onSentinelStatus);
   if (afterSubmit.attested) {
     setStatus(network, "passed", "Attested", afterSubmit.explorerUrl ?? explorer);
   } else if (afterSubmit.rejected) {
@@ -617,11 +511,7 @@ async function runCheckOne(
     const settings = await getSettings(network.id);
     logger.log("Settings:", settings);
 
-    if (network.id === "beta") {
-      await runBetaCheck(logger, network, settings, payload, safeTxHash);
-    } else {
-      await runQ3Check(logger, network, settings, payload, safeTxHash);
-    }
+    await runAegisCheck(logger, network, settings, payload, safeTxHash);
   } catch (err) {
     logger.err("Check failed:", err);
     setStatus(network, "failed", "Check error - see console");
@@ -670,8 +560,8 @@ function scheduleInit(delay = 150) {
 
 async function init() {
   void ensurePageBridgeInjected();
-  if (!isReviewScreen(document)) {
-    log("Not on Safe review screen, hiding UI");
+  if (!isWidgetScreen(document, window.location.href)) {
+    log("Not on Safe review screen or tx details page, hiding UI");
     for (const network of NETWORKS) removeUi(document, network);
     return;
   }
@@ -703,7 +593,7 @@ const observer = new MutationObserver((mutations) => {
   if (containers.length > 0 && mutations.every((m) => containers.some((c) => c.contains(m.target as Node)))) {
     return;
   }
-  if (isReviewScreen(document) || containers.length > 0) {
+  if (isWidgetScreen(document, window.location.href) || containers.length > 0) {
     scheduleInit();
   }
 });

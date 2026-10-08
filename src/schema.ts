@@ -24,7 +24,8 @@ export const settingsSchema = z.object({
   consensus: addressString,
   rpc: z.url(),
   relayerUrl: z.url(),
-  sentinelOracle: addressString.optional(),
+  sentinelOracle: addressString,
+  explorerUrl: z.url(),
 })
 
 export const safeTransactionSchema = z.object({
